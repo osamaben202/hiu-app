@@ -28,11 +28,20 @@ class ApiService {
     /// 检测后端是否可用
     static Future<bool> checkBackendAvailable() async {
         try {
-            final uri = Uri.parse('$baseUrl/health');
-            final response = await http.get(uri).timeout(
-                const Duration(seconds: 3),
-            );
-            _backendAvailable = response.statusCode == 200;
+            // Try /health first, then /api/auth/health as fallback
+            final uri1 = Uri.parse('\${baseUrl.replaceAll("/api", "")}/health');
+            final uri2 = Uri.parse('\$baseUrl/auth/health');
+            try {
+                final response = await http.get(uri1).timeout(const Duration(seconds: 3));
+                _backendAvailable = response.statusCode == 200;
+            } catch (_) {
+                try {
+                  final response = await http.get(uri2).timeout(const Duration(seconds: 3));
+                  _backendAvailable = response.statusCode == 200;
+                } catch (_) {
+                  _backendAvailable = false;
+                }
+            }
         } catch (e) {
             _backendAvailable = false;
         }
