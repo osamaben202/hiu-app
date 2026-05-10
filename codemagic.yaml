@@ -6,8 +6,6 @@ workflows:
 
     environment:
       flutter: stable
-      android_signing:
-        - keystore_reference: HIU_KEYSTORE
       vars:
         PACKAGE_NAME: "com.hiu.app"
 
@@ -35,7 +33,7 @@ workflows:
     publishing:
       email:
         recipients:
-          - user@example.com
+          - 1223565456wk@gmail.com
         notify:
           success: true
           failure: true
