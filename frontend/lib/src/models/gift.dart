@@ -99,7 +99,7 @@ class GiftRecord {
             receiverAvatar: json['receiver_avatar'],
             roomName: json['room_name'],
             createdAt: json['created_at'] != null 
-                ? DateTime.tryParse(json['created_at']) 
+                ? DateTime.tryParse(json['created_at']) ?? DateTime.now()
                 : DateTime.now(),
         );
     }

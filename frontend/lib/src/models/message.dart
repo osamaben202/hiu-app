@@ -41,7 +41,7 @@ class ChatMessage {
             giftName: json['gift_name'],
             giftCount: json['gift_count'] ?? json['count'],
             createdAt: json['created_at'] != null 
-                ? DateTime.tryParse(json['created_at']) 
+                ? DateTime.tryParse(json['created_at']) ?? DateTime.now()
                 : DateTime.now(),
         );
     }
@@ -93,7 +93,7 @@ class PrivateMessage {
             receiverNickname: json['receiver_nickname'],
             receiverAvatar: json['receiver_avatar'],
             createdAt: json['created_at'] != null 
-                ? DateTime.tryParse(json['created_at']) 
+                ? DateTime.tryParse(json['created_at']) ?? DateTime.now()
                 : DateTime.now(),
         );
     }
@@ -108,7 +108,7 @@ class Conversation {
     final String avatar;
     final String gender;
     final String role;
-    final ChatMessage? lastMessage;
+    ChatMessage? lastMessage;
     int unreadCount;
 
     Conversation({
