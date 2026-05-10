@@ -4,7 +4,7 @@
   "description": "HIU Voice Room App Backend",
   "main": "src/app.js",
   "scripts": {
-    "start": "node src/app.js",
+    "start": "node scripts/init-db.js && node src/app.js",
     "dev": "nodemon src/app.js",
     "init-db": "node scripts/init-db.js",
     "test": "jest"
