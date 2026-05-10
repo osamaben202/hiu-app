@@ -218,11 +218,13 @@ class ApiService {
         String? nickname,
         String? avatar,
         String? signature,
+        String? gender,
     }) async {
         final body = <String, dynamic>{};
         if (nickname != null) body['nickname'] = nickname;
         if (avatar != null) body['avatar'] = avatar;
         if (signature != null) body['signature'] = signature;
+        if (gender != null) body['gender'] = gender;
         
         final result = await _request('PUT', '/users/profile', body: body);
         return User.fromJson(result['data']);

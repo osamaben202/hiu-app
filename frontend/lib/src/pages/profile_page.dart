@@ -76,9 +76,9 @@ class _ProfilePageState extends State<ProfilePage> {
                                     const SizedBox(height: 12),
 
                                     // 个人介绍
-                                    if (user.signature != null && user.signature!.isNotEmpty)
-                                        _SignatureCard(signature: user.signature!),
-                                    if (user.signature != null && user.signature!.isNotEmpty)
+                                    if (user.signature.isNotEmpty)
+                                        _SignatureCard(signature: user.signature),
+                                    if (user.signature.isNotEmpty)
                                         const SizedBox(height: 12),
 
                                     // 设置菜单
@@ -242,7 +242,7 @@ class _AccountCard extends StatelessWidget {
                             leading: const Text('👨', style: TextStyle(fontSize: 24)),
                             title: const Text('Male'),
                             onTap: () async {
-                                await userProvider.updateProfile(nickname: null);
+                                await userProvider.updateProfile(gender: 'male');
                                 Navigator.pop(context);
                             },
                         ),
@@ -250,7 +250,15 @@ class _AccountCard extends StatelessWidget {
                             leading: const Text('👩', style: TextStyle(fontSize: 24)),
                             title: const Text('Female'),
                             onTap: () async {
-                                await userProvider.updateProfile(nickname: null);
+                                await userProvider.updateProfile(gender: 'female');
+                                Navigator.pop(context);
+                            },
+                        ),
+                        ListTile(
+                            leading: const Text('❓', style: TextStyle(fontSize: 24)),
+                            title: const Text('Unknown'),
+                            onTap: () async {
+                                await userProvider.updateProfile(gender: 'unknown');
                                 Navigator.pop(context);
                             },
                         ),

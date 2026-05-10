@@ -293,14 +293,29 @@ class UserProvider extends ChangeNotifier {
         String? nickname,
         String? avatar,
         String? signature,
+        String? gender,
     }) async {
         try {
             _currentUser = await _api.updateProfile(
                 nickname: nickname,
                 avatar: avatar,
                 signature: signature,
+                gender: gender,
             );
             notifyListeners();
+            return true;
+        } catch (e) {
+            _error = e.toString();
+            notifyListeners();
+            return false;
+        }
+    }
+
+    /// 绑定邮箱
+    Future<bool> bindEmail(String email, String password) async {
+        try {
+            await _api.bindEmail(email, password);
+            await refreshUser();
             return true;
         } catch (e) {
             _error = e.toString();
