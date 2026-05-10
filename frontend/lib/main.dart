@@ -3,10 +3,10 @@
  */
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'providers/user_provider.dart';
-import 'providers/room_provider.dart';
-import 'providers/chat_provider.dart';
-import 'pages/splash_page.dart';
+import 'src/providers/user_provider.dart';
+import 'src/providers/room_provider.dart';
+import 'src/providers/chat_provider.dart';
+import 'src/pages/splash_page.dart';
 
 void main() {
     runApp(const HIUApp());
