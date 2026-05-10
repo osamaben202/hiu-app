@@ -18,8 +18,6 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-    bool _obscurePassword = true;
-
     @override
     void initState() {
         super.initState();
@@ -64,25 +62,15 @@ class _ProfilePageState extends State<ProfilePage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                     // 账号信息卡片
-                                    _AccountCard(user: user, userProvider: userProvider),
-                                    const SizedBox(height: 12),
-
-                                    // 密码卡片（始终显示）
-                                    _PasswordCard(userProvider: userProvider, obscurePassword: _obscurePassword, onToggle: () => setState(() => _obscurePassword = !_obscurePassword)),
-                                    const SizedBox(height: 12),
+                                    _AccountCard(user: user),
+                                    const SizedBox(height: 20),
 
                                     // 货币信息
                                     _BalanceCard(user: user),
-                                    const SizedBox(height: 12),
-
-                                    // 个人介绍
-                                    if (user.signature.isNotEmpty)
-                                        _SignatureCard(signature: user.signature),
-                                    if (user.signature.isNotEmpty)
-                                        const SizedBox(height: 12),
+                                    const SizedBox(height: 20),
 
                                     // 设置菜单
-                                    _SettingsSection(user: user, userProvider: userProvider),
+                                    _SettingsSection(user: user),
                                 ],
                             ),
                         ),
@@ -98,9 +86,8 @@ class _ProfilePageState extends State<ProfilePage> {
  */
 class _AccountCard extends StatelessWidget {
     final dynamic user;
-    final UserProvider userProvider;
 
-    const _AccountCard({required this.user, required this.userProvider});
+    const _AccountCard({required this.user});
 
     @override
     Widget build(BuildContext context) {
@@ -122,22 +109,15 @@ class _AccountCard extends StatelessWidget {
             child: Column(
                 children: [
                     // 头像
-                    GestureDetector(
-                        onTap: () {
-                            Navigator.of(context).push(
-                                MaterialPageRoute(builder: (_) => const EditProfilePage()),
-                            );
-                        },
-                        child: CircleAvatar(
-                            radius: 45,
-                            backgroundColor: Colors.white.withOpacity(0.2),
-                            child: Text(
-                                (user.nickname.isEmpty ? user.account : user.nickname)[0].toUpperCase(),
-                                style: const TextStyle(
-                                    fontSize: 36,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                ),
+                    CircleAvatar(
+                        radius: 45,
+                        backgroundColor: Colors.white.withOpacity(0.2),
+                        child: Text(
+                            (user.nickname.isEmpty ? user.account : user.nickname)[0].toUpperCase(),
+                            style: const TextStyle(
+                                fontSize: 36,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
                             ),
                         ),
                     ),
@@ -145,7 +125,7 @@ class _AccountCard extends StatelessWidget {
 
                     // 昵称
                     Text(
-                        user.nickname.isEmpty ? 'Tap to set nickname' : user.nickname,
+                        user.nickname.isEmpty ? 'Not set' : user.nickname,
                         style: const TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.bold,
@@ -179,40 +159,20 @@ class _AccountCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
 
-                    // 性别标签 + 修改按钮
-                    Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                            Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.2),
-                                    borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                    _getGenderLabel(user.gender),
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                    ),
-                                ),
+                    // 性别标签
+                    Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                            _getGenderLabel(user.gender),
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
                             ),
-                            const SizedBox(width: 8),
-                            GestureDetector(
-                                onTap: () => _showGenderDialog(context),
-                                child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                        color: Colors.white.withOpacity(0.15),
-                                        borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: const Text(
-                                        'Change',
-                                        style: TextStyle(color: Colors.white, fontSize: 11),
-                                    ),
-                                ),
-                            ),
-                        ],
+                        ),
                     ),
                 ],
             ),
@@ -228,150 +188,6 @@ class _AccountCard extends StatelessWidget {
             default:
                 return '❓ Unknown';
         }
-    }
-
-    void _showGenderDialog(BuildContext context) {
-        showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-                title: const Text('Select Gender'),
-                content: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                        ListTile(
-                            leading: const Text('👨', style: TextStyle(fontSize: 24)),
-                            title: const Text('Male'),
-                            onTap: () async {
-                                await userProvider.updateProfile(gender: 'male');
-                                Navigator.pop(context);
-                            },
-                        ),
-                        ListTile(
-                            leading: const Text('👩', style: TextStyle(fontSize: 24)),
-                            title: const Text('Female'),
-                            onTap: () async {
-                                await userProvider.updateProfile(gender: 'female');
-                                Navigator.pop(context);
-                            },
-                        ),
-                        ListTile(
-                            leading: const Text('❓', style: TextStyle(fontSize: 24)),
-                            title: const Text('Unknown'),
-                            onTap: () async {
-                                await userProvider.updateProfile(gender: 'unknown');
-                                Navigator.pop(context);
-                            },
-                        ),
-                    ],
-                ),
-            ),
-        );
-    }
-}
-
-/**
- * 密码卡片 - 始终显示账号和密码
- */
-class _PasswordCard extends StatelessWidget {
-    final UserProvider userProvider;
-    final bool obscurePassword;
-    final VoidCallback onToggle;
-
-    const _PasswordCard({
-        required this.userProvider,
-        required this.obscurePassword,
-        required this.onToggle,
-    });
-
-    @override
-    Widget build(BuildContext context) {
-        final account = userProvider.localAccount ?? '';
-        final password = userProvider.localPassword ?? '';
-
-        return Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(15),
-                border: Border.all(color: Colors.orange.shade200),
-            ),
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                    Row(
-                        children: [
-                            Icon(Icons.lock_outline, color: Colors.orange.shade700, size: 20),
-                            const SizedBox(width: 8),
-                            Text(
-                                'Your Login Info',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.orange.shade700,
-                                ),
-                            ),
-                        ],
-                    ),
-                    const SizedBox(height: 12),
-                    // 账号行
-                    Row(
-                        children: [
-                            const SizedBox(
-                                width: 70,
-                                child: Text('Account:', style: TextStyle(fontWeight: FontWeight.w500)),
-                            ),
-                            Expanded(
-                                child: Text(
-                                    account,
-                                    style: const TextStyle(fontFamily: 'monospace', fontSize: 15),
-                                ),
-                            ),
-                            IconButton(
-                                icon: const Icon(Icons.copy, size: 18),
-                                onPressed: () {
-                                    Clipboard.setData(ClipboardData(text: account));
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('Account copied')),
-                                    );
-                                },
-                            ),
-                        ],
-                    ),
-                    // 密码行
-                    Row(
-                        children: [
-                            const SizedBox(
-                                width: 70,
-                                child: Text('Password:', style: TextStyle(fontWeight: FontWeight.w500)),
-                            ),
-                            Expanded(
-                                child: Text(
-                                    obscurePassword ? '••••••••' : password,
-                                    style: const TextStyle(fontFamily: 'monospace', fontSize: 15),
-                                ),
-                            ),
-                            IconButton(
-                                icon: Icon(obscurePassword ? Icons.visibility : Icons.visibility_off, size: 18),
-                                onPressed: onToggle,
-                            ),
-                            IconButton(
-                                icon: const Icon(Icons.copy, size: 18),
-                                onPressed: () {
-                                    Clipboard.setData(ClipboardData(text: password));
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('Password copied')),
-                                    );
-                                },
-                            ),
-                        ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                        '⚠️ Please save your account and password!',
-                        style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
-                    ),
-                ],
-            ),
-        );
     }
 }
 
@@ -412,6 +228,7 @@ class _BalanceCard extends StatelessWidget {
                     const SizedBox(height: 16),
                     Row(
                         children: [
+                            // 金币
                             Expanded(
                                 child: _BalanceItem(
                                     icon: Icons.monetization_on,
@@ -425,6 +242,7 @@ class _BalanceCard extends StatelessWidget {
                                 height: 50,
                                 color: Colors.grey[300],
                             ),
+                            // 钻石
                             Expanded(
                                 child: _BalanceItem(
                                     icon: Icons.diamond,
@@ -496,49 +314,12 @@ class _BalanceItem extends StatelessWidget {
 }
 
 /**
- * 个人介绍卡片
- */
-class _SignatureCard extends StatelessWidget {
-    final String signature;
-    const _SignatureCard({required this.signature});
-
-    @override
-    Widget build(BuildContext context) {
-        return Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(15),
-                boxShadow: [
-                    BoxShadow(
-                        color: Colors.grey.withOpacity(0.1),
-                        blurRadius: 10,
-                    ),
-                ],
-            ),
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                    const Text(
-                        'About Me',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(signature, style: const TextStyle(fontSize: 15)),
-                ],
-            ),
-        );
-    }
-}
-
-/**
  * 设置菜单
  */
 class _SettingsSection extends StatelessWidget {
     final dynamic user;
-    final UserProvider userProvider;
 
-    const _SettingsSection({required this.user, required this.userProvider});
+    const _SettingsSection({required this.user});
 
     @override
     Widget build(BuildContext context) {
@@ -566,21 +347,6 @@ class _SettingsSection extends StatelessWidget {
                     ),
                     child: Column(
                         children: [
-                            // 编辑资料
-                            _SettingsItem(
-                                icon: Icons.person,
-                                iconColor: Colors.purple,
-                                title: 'Edit Profile',
-                                subtitle: 'Change avatar, nickname, signature',
-                                onTap: () {
-                                    Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                            builder: (_) => const EditProfilePage(),
-                                        ),
-                                    );
-                                },
-                            ),
-
                             // 异性聊天定价（仅女性显示）
                             if (user.gender == 'female')
                                 _SettingsItem(
@@ -673,21 +439,8 @@ class _SettingsSection extends StatelessWidget {
                     ),
                     ElevatedButton(
                         onPressed: () async {
-                            try {
-                                await userProvider.bindEmail(emailController.text, passwordController.text);
-                                if (context.mounted) {
-                                    Navigator.pop(context);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('Email bound successfully')),
-                                    );
-                                }
-                            } catch (e) {
-                                if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red),
-                                    );
-                                }
-                            }
+                            // TODO: 实现绑定邮箱
+                            Navigator.pop(context);
                         },
                         style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF6C5CE7),
