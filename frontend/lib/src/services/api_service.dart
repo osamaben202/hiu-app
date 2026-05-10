@@ -12,7 +12,7 @@ import '../models/message.dart';
 
 class ApiService {
     // 基础URL，生产环境需要修改
-    static const String baseUrl = 'http://localhost:3000/api';
+    static const String baseUrl = 'https://hiu-backend-production.up.railway.app/api';
     
     String? _token;
     String? _refreshToken;
