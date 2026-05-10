@@ -6,7 +6,7 @@
 const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 
 // Railway provides DATABASE_URL, use it if available
 const pool = process.env.DATABASE_URL

@@ -2,7 +2,7 @@
  * 用户路由
  */
 const express = require('express');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const { query, transaction } = require('../models/db');
 const { auth, adminAuth } = require('../middleware/auth');
 const response = require('../utils/response');
