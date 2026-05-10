@@ -3,7 +3,6 @@
  */
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
@@ -14,55 +13,44 @@ import '../models/gift.dart';
 import '../models/message.dart';
 
 class ApiService {
-    // 基础URL，生产环境需要修改
     static const String baseUrl = 'https://hiu-backend-production.up.railway.app/api';
+    static const String baseHost = 'https://hiu-backend-production.up.railway.app';
     
     String? _token;
     String? _refreshToken;
-    static bool _backendAvailable = true;
 
     static final ApiService _instance = ApiService._internal();
     factory ApiService() => _instance;
     ApiService._internal();
 
-    /// 检测后端是否可用
+    /// 检测后端是否可用（直接检测，不做本地缓存）
     static Future<bool> checkBackendAvailable() async {
         try {
-            // Try /health first, then /api/auth/health as fallback
-            final uri1 = Uri.parse('\${baseUrl.replaceAll("/api", "")}/health');
-            final uri2 = Uri.parse('\$baseUrl/auth/health');
+            final uri = Uri.parse('$baseHost/health');
+            final response = await http.get(uri).timeout(const Duration(seconds: 5));
+            return response.statusCode == 200;
+        } catch (_) {
             try {
-                final response = await http.get(uri1).timeout(const Duration(seconds: 3));
-                _backendAvailable = response.statusCode == 200;
+                final uri = Uri.parse('$baseUrl/auth/health');
+                final response = await http.get(uri).timeout(const Duration(seconds: 5));
+                return response.statusCode == 200;
             } catch (_) {
-                try {
-                  final response = await http.get(uri2).timeout(const Duration(seconds: 3));
-                  _backendAvailable = response.statusCode == 200;
-                } catch (_) {
-                  _backendAvailable = false;
-                }
+                return false;
             }
-        } catch (e) {
-            _backendAvailable = false;
         }
-        return _backendAvailable;
     }
-
-    /// 后端是否可用
-    static bool get backendAvailable => _backendAvailable;
 
     /// 生成随机账号ID
     static String generateAccountId() {
-        final random = Random();
-        final number = random.nextInt(900000) + 100000;
-        return 'U$number';
+        final random = DateTime.now().millisecondsSinceEpoch % 900000 + 100000;
+        return 'U$random';
     }
 
     /// 生成随机密码
     static String generatePassword() {
         const chars = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-        final random = Random();
-        return List.generate(8, (_) => chars[random.nextInt(chars.length)]).join();
+        final random = DateTime.now().millisecondsSinceEpoch;
+        return List.generate(8, (i) => chars[(random + i * 7) % chars.length]).join();
     }
 
     // 设置Token
@@ -72,28 +60,20 @@ class ApiService {
         _saveToken();
     }
 
-    // 获取Token
     String? get token => _token;
 
-    // 保存Token到本地
     Future<void> _saveToken() async {
         final prefs = await SharedPreferences.getInstance();
-        if (_token != null) {
-            await prefs.setString('token', _token!);
-        }
-        if (_refreshToken != null) {
-            await prefs.setString('refresh_token', _refreshToken!);
-        }
+        if (_token != null) await prefs.setString('token', _token!);
+        if (_refreshToken != null) await prefs.setString('refresh_token', _refreshToken!);
     }
 
-    // 从本地加载Token
     Future<void> loadToken() async {
         final prefs = await SharedPreferences.getInstance();
         _token = prefs.getString('token');
         _refreshToken = prefs.getString('refresh_token');
     }
 
-    // 清除Token
     Future<void> clearToken() async {
         _token = null;
         _refreshToken = null;
@@ -102,28 +82,21 @@ class ApiService {
         await prefs.remove('refresh_token');
     }
 
-    // HTTP请求头
     Map<String, String> get _headers {
-        final headers = <String, String>{
-            'Content-Type': 'application/json',
-        };
-        if (_token != null) {
-            headers['Authorization'] = 'Bearer $_token';
-        }
+        final headers = <String, String>{'Content-Type': 'application/json'};
+        if (_token != null) headers['Authorization'] = 'Bearer $_token';
         return headers;
     }
 
-    // 通用请求方法
+    // 通用请求方法 - 带自动刷新token
     Future<Map<String, dynamic>> _request(
-        String method,
-        String path, {
+        String method, String path, {
         Map<String, dynamic>? body,
         Map<String, String>? queryParams,
+        bool isRetry = false,
     }) async {
         Uri uri = Uri.parse('$baseUrl$path');
-        if (queryParams != null) {
-            uri = uri.replace(queryParameters: queryParams);
-        }
+        if (queryParams != null) uri = uri.replace(queryParameters: queryParams);
 
         http.Response response;
         final options = _headers;
@@ -134,18 +107,10 @@ class ApiService {
                     response = await http.get(uri, headers: options);
                     break;
                 case 'POST':
-                    response = await http.post(
-                        uri,
-                        headers: options,
-                        body: body != null ? jsonEncode(body) : null,
-                    );
+                    response = await http.post(uri, headers: options, body: body != null ? jsonEncode(body) : null);
                     break;
                 case 'PUT':
-                    response = await http.put(
-                        uri,
-                        headers: options,
-                        body: body != null ? jsonEncode(body) : null,
-                    );
+                    response = await http.put(uri, headers: options, body: body != null ? jsonEncode(body) : null);
                     break;
                 case 'DELETE':
                     response = await http.delete(uri, headers: options);
@@ -154,13 +119,19 @@ class ApiService {
                     throw Exception('Unsupported HTTP method');
             }
 
-            final data = jsonDecode(response.body);
-            
-            if (data['code'] == 0) {
-                return data;
-            } else {
-                throw ApiException(data['message'] ?? 'Request failed');
+            // 如果token过期，自动刷新重试
+            if (response.statusCode == 401 && !isRetry && _refreshToken != null) {
+                try {
+                    await refreshToken();
+                    return _request(method, path, body: body, queryParams: queryParams, isRetry: true);
+                } catch (_) {
+                    // 刷新失败，继续抛出原始错误
+                }
             }
+
+            final data = jsonDecode(response.body);
+            if (data['code'] == 0) return data;
+            throw ApiException(data['message'] ?? 'Request failed');
         } catch (e) {
             if (e is ApiException) rethrow;
             throw ApiException('Network error: $e');
@@ -169,7 +140,6 @@ class ApiService {
 
     // ============ 认证模块 ============
 
-    /// 自动注册
     Future<Map<String, dynamic>> register() async {
         final result = await _request('POST', '/auth/register');
         if (result['data'] != null) {
@@ -178,7 +148,6 @@ class ApiService {
         return result['data'];
     }
 
-    /// 登录
     Future<Map<String, dynamic>> login(String account, String password) async {
         final result = await _request('POST', '/auth/login', body: {
             'account': account,
@@ -190,28 +159,18 @@ class ApiService {
         return result['data'];
     }
 
-    /// 获取当前用户
     Future<User> getCurrentUser() async {
         final result = await _request('GET', '/auth/me');
         return User.fromJson(result['data']);
     }
 
-    /// 绑定邮箱
     Future<void> bindEmail(String email, String password) async {
-        await _request('POST', '/auth/bind-email', body: {
-            'email': email,
-            'password': password,
-        });
+        await _request('POST', '/auth/bind-email', body: {'email': email, 'password': password});
     }
 
-    /// 刷新Token
     Future<void> refreshToken() async {
-        if (_refreshToken == null) {
-            throw ApiException('No refresh token');
-        }
-        final result = await _request('POST', '/auth/refresh', body: {
-            'refreshToken': _refreshToken,
-        });
+        if (_refreshToken == null) throw ApiException('No refresh token');
+        final result = await _request('POST', '/auth/refresh', body: {'refreshToken': _refreshToken});
         if (result['data'] != null) {
             setToken(result['data']['token'], result['data']['refreshToken']);
         }
@@ -219,285 +178,49 @@ class ApiService {
 
     // ============ 用户模块 ============
 
-    /// 获取个人资料
     Future<User> getProfile() async {
         final result = await _request('GET', '/users/profile');
         return User.fromJson(result['data']);
     }
 
-    /// 更新个人资料
-    Future<User> updateProfile({
-        String? nickname,
-        String? avatar,
-        String? signature,
-    }) async {
+    Future<User> updateProfile({String? nickname, String? avatar, String? signature}) async {
         final body = <String, dynamic>{};
         if (nickname != null) body['nickname'] = nickname;
         if (avatar != null) body['avatar'] = avatar;
         if (signature != null) body['signature'] = signature;
-        
         final result = await _request('PUT', '/users/profile', body: body);
         return User.fromJson(result['data']);
     }
 
-    /// 设置聊天定价
-    Future<void> updatePricing({
-        double? textPrice,
-        double? imagePrice,
-        double? videoPrice,
-    }) async {
+    Future<void> updatePricing({double? textPrice, double? imagePrice, double? videoPrice}) async {
         final body = <String, dynamic>{};
         if (textPrice != null) body['text_price'] = textPrice;
         if (imagePrice != null) body['image_price'] = imagePrice;
         if (videoPrice != null) body['video_price'] = videoPrice;
-        
         await _request('PUT', '/users/pricing', body: body);
     }
 
-    /// 获取其他用户信息
     Future<User> getUserInfo(String oderId) async {
         final result = await _request('GET', '/users/$oderId');
         return User.fromJson(result['data']);
     }
-
-    // ============ 房间模块 ============
-
-    /// 获取房间列表
-    Future<List<Room>> getRooms({
-        int page = 1,
-        int limit = 20,
-        String? keyword,
-        String sort = 'created',
-    }) async {
-        final params = <String, String>{
-            'page': page.toString(),
-            'limit': limit.toString(),
-            'sort': sort,
-        };
-        if (keyword != null) params['keyword'] = keyword;
-        
-        final result = await _request('GET', '/rooms', queryParams: params);
-        final list = result['data']['list'] as List;
-        return list.map((e) => Room.fromJson(e)).toList();
-    }
-
-    /// 获取房间详情
-    Future<Room> getRoomDetail(String roomId) async {
-        final result = await _request('GET', '/rooms/$roomId');
-        return Room.fromJson(result['data']);
-    }
-
-    /// 创建房间
-    Future<Room> createRoom({
-        required String name,
-        String? cover,
-        String? description,
-        bool isPublic = true,
-        String? password,
-        String? tags,
-    }) async {
-        final result = await _request('POST', '/rooms', body: {
-            'name': name,
-            'cover': cover ?? '',
-            'description': description ?? '',
-            'is_public': isPublic,
-            'password': password ?? '',
-            'tags': tags ?? '',
-        });
-        return Room.fromJson(result['data']);
-    }
-
-    /// 加入房间
-    Future<Map<String, dynamic>> joinRoom(String roomId, {String? password}) async {
-        final body = <String, dynamic>{};
-        if (password != null) body['password'] = password;
-        
-        final result = await _request('POST', '/rooms/$roomId/join', body: body);
-        return result['data'];
-    }
-
-    /// 离开房间
-    Future<void> leaveRoom(String roomId) async {
-        await _request('POST', '/rooms/$roomId/leave');
-    }
-
-    /// 上麦
-    Future<void> joinSeat(String roomId, int seatIndex) async {
-        await _request('POST', '/rooms/$roomId/seat/$seatIndex/join');
-    }
-
-    /// 下麦
-    Future<void> leaveSeat(String roomId, int seatIndex) async {
-        await _request('POST', '/rooms/$roomId/seat/$seatIndex/leave');
-    }
-
-    /// 踢人下麦
-    Future<void> kickSeat(String roomId, int seatIndex) async {
-        await _request('POST', '/rooms/$roomId/seat/$seatIndex/kick');
-    }
-
-    /// 闭麦/开麦
-    Future<void> muteSeat(String roomId, int seatIndex, bool isMuted) async {
-        await _request('PUT', '/rooms/$roomId/seat/$seatIndex/mute', body: {
-            'is_muted': isMuted,
-        });
-    }
-
-    /// 锁定/解锁麦位
-    Future<void> lockSeat(String roomId, int seatIndex, bool isLocked) async {
-        await _request('PUT', '/rooms/$roomId/seat/$seatIndex/lock', body: {
-            'is_locked': isLocked,
-        });
-    }
-
-    /// 关闭房间
-    Future<void> closeRoom(String roomId) async {
-        await _request('DELETE', '/rooms/$roomId');
-    }
-
-    // ============ 礼物模块 ============
-
-    /// 获取礼物列表
-    Future<List<Gift>> getGifts() async {
-        final result = await _request('GET', '/gifts');
-        final list = result['data'] as List;
-        return list.map((e) => Gift.fromJson(e)).toList();
-    }
-
-    /// 发送礼物
-    Future<Map<String, dynamic>> sendGift({
-        required String giftId,
-        required String receiverId,
-        String? roomId,
-        int count = 1,
-    }) async {
-        final result = await _request('POST', '/gifts/$giftId/send', body: {
-            'receiver_id': receiverId,
-            'room_id': roomId,
-            'count': count,
-        });
-        return result['data'];
-    }
-
-    /// 获取礼物记录
-    Future<List<GiftRecord>> getGiftRecords({
-        int page = 1,
-        int limit = 20,
-        String? type,
-    }) async {
-        final params = <String, String>{
-            'page': page.toString(),
-            'limit': limit.toString(),
-        };
-        if (type != null) params['type'] = type;
-        
-        final result = await _request('GET', '/gifts/records', queryParams: params);
-        final list = result['data']['list'] as List;
-        return list.map((e) => GiftRecord.fromJson(e)).toList();
-    }
-
-    // ============ 金币模块 ============
-
-    /// 获取金币余额
-    Future<double> getCoinBalance() async {
-        final result = await _request('GET', '/coins/balance');
-        return double.tryParse(result['data']['coin_balance']?.toString() ?? '0') ?? 0;
-    }
-
-    /// 代理分发金币
-    Future<void> distributeCoins({
-        required String account,
-        required double amount,
-        required String distributePassword,
-    }) async {
-        await _request('POST', '/coins/distribute', body: {
-            'account': account,
-            'amount': amount,
-            'distribute_password': distributePassword,
-        });
-    }
-
-    // ============ 钻石模块 ============
-
-    /// 获取钻石余额
-    Future<double> getDiamondBalance() async {
-        final result = await _request('GET', '/diamonds/balance');
-        return double.tryParse(result['data']['diamond_balance']?.toString() ?? '0') ?? 0;
-    }
-
-    /// 申请提现
-    Future<void> withdraw({
-        required double amount,
-        required String paymentAddress,
-        String paymentMethod = 'usdt',
-    }) async {
-        await _request('POST', '/diamonds/withdraw', body: {
-            'amount': amount,
-            'payment_address': paymentAddress,
-            'payment_method': paymentMethod,
-        });
-    }
-
-    /// 获取提现汇率
-    Future<int> getWithdrawRate() async {
-        final result = await _request('GET', '/diamonds/withdraw/rate');
-        return int.tryParse(result['data']['exchange_rate']?.toString() ?? '10000') ?? 10000;
-    }
-
-    // ============ 1对1聊天模块 ============
-
-    /// 获取会话列表
-    Future<List<Conversation>> getConversations() async {
-        final result = await _request('GET', '/chat/conversations');
-        final list = result['data']['list'] as List;
-        return list.map((e) => Conversation.fromJson(e)).toList();
-    }
-
-    /// 获取聊天记录
-    Future<List<PrivateMessage>> getMessages(
-        String oderId, {
-        int page = 1,
-        int limit = 50,
-    }) async {
-        final result = await _request('GET', '/chat/messages/$oderId', queryParams: {
-            'page': page.toString(),
-            'limit': limit.toString(),
-        });
-        final list = result['data']['list'] as List;
-        return list.map((e) => PrivateMessage.fromJson(e)).toList();
-    }
-
 
     /// 上传头像
     Future<String?> uploadAvatar(File imageFile) async {
         try {
             final uri = Uri.parse('$baseUrl/upload/avatar');
             final request = http.MultipartRequest('POST', uri);
-            
-            if (_token != null) {
-                request.headers['Authorization'] = 'Bearer $_token';
-            }
-            
+            if (_token != null) request.headers['Authorization'] = 'Bearer $_token';
             final ext = imageFile.path.split('.').last.toLowerCase();
             final mimeType = ext == 'png' ? 'image/png' : ext == 'gif' ? 'image/gif' : 'image/jpeg';
-            
-            request.files.add(
-                await http.MultipartFile.fromPath(
-                    'avatar',
-                    imageFile.path,
-                    contentType: MediaType.parse(mimeType),
-                ),
-            );
-            
+            request.files.add(await http.MultipartFile.fromPath('avatar', imageFile.path, contentType: MediaType.parse(mimeType)));
             final streamedResponse = await request.send();
             final response = await http.Response.fromStream(streamedResponse);
             final data = jsonDecode(response.body);
-            
             if (data['code'] == 0 && data['data'] != null) {
-                // Return full URL
                 final url = data['data']['url'];
                 if (url.startsWith('http')) return url;
-                return '$baseUrl'.replaceAll('/api', '') + url;
+                return '$baseHost$url';
             }
             return null;
         } catch (e) {
@@ -506,21 +229,120 @@ class ApiService {
         }
     }
 
-    /// 发送消息
-    Future<Map<String, dynamic>> sendMessage({
-        required String receiverId,
-        required String type,
-        required String content,
-    }) async {
-        final result = await _request('POST', '/chat/send', body: {
-            'receiver_id': receiverId,
-            'type': type,
-            'content': content,
+    // ============ 房间模块 ============
+
+    Future<List<Room>> getRooms({int page = 1, int limit = 20, String? keyword, String sort = 'created'}) async {
+        final params = <String, String>{'page': page.toString(), 'limit': limit.toString(), 'sort': sort};
+        if (keyword != null) params['keyword'] = keyword;
+        final result = await _request('GET', '/rooms', queryParams: params);
+        final list = result['data']['list'] as List;
+        return list.map((e) => Room.fromJson(e)).toList();
+    }
+
+    Future<Room> getRoomDetail(String roomId) async {
+        final result = await _request('GET', '/rooms/$roomId');
+        return Room.fromJson(result['data']);
+    }
+
+    Future<Room> createRoom({required String name, String? cover, String? description, bool isPublic = true, String? password, String? tags}) async {
+        final result = await _request('POST', '/rooms', body: {
+            'name': name, 'cover': cover ?? '', 'description': description ?? '',
+            'is_public': isPublic, 'password': password ?? '', 'tags': tags ?? '',
+        });
+        return Room.fromJson(result['data']);
+    }
+
+    Future<Map<String, dynamic>> joinRoom(String roomId, {String? password}) async {
+        final body = <String, dynamic>{};
+        if (password != null) body['password'] = password;
+        final result = await _request('POST', '/rooms/$roomId/join', body: body);
+        return result['data'];
+    }
+
+    Future<void> leaveRoom(String roomId) async => await _request('POST', '/rooms/$roomId/leave');
+    Future<void> joinSeat(String roomId, int seatIndex) async => await _request('POST', '/rooms/$roomId/seat/$seatIndex/join');
+    Future<void> leaveSeat(String roomId, int seatIndex) async => await _request('POST', '/rooms/$roomId/seat/$seatIndex/leave');
+    Future<void> kickSeat(String roomId, int seatIndex) async => await _request('POST', '/rooms/$roomId/seat/$seatIndex/kick');
+
+    Future<void> muteSeat(String roomId, int seatIndex, bool isMuted) async {
+        await _request('PUT', '/rooms/$roomId/seat/$seatIndex/mute', body: {'is_muted': isMuted});
+    }
+
+    Future<void> lockSeat(String roomId, int seatIndex, bool isLocked) async {
+        await _request('PUT', '/rooms/$roomId/seat/$seatIndex/lock', body: {'is_locked': isLocked});
+    }
+
+    Future<void> closeRoom(String roomId) async => await _request('DELETE', '/rooms/$roomId');
+
+    // ============ 礼物模块 ============
+
+    Future<List<Gift>> getGifts() async {
+        final result = await _request('GET', '/gifts');
+        final list = result['data'] as List;
+        return list.map((e) => Gift.fromJson(e)).toList();
+    }
+
+    Future<Map<String, dynamic>> sendGift({required String giftId, required String receiverId, String? roomId, int count = 1}) async {
+        final result = await _request('POST', '/gifts/$giftId/send', body: {
+            'receiver_id': receiverId, 'room_id': roomId, 'count': count,
         });
         return result['data'];
     }
 
-    /// 获取未读消息数
+    Future<List<GiftRecord>> getGiftRecords({int page = 1, int limit = 20, String? type}) async {
+        final params = <String, String>{'page': page.toString(), 'limit': limit.toString()};
+        if (type != null) params['type'] = type;
+        final result = await _request('GET', '/gifts/records', queryParams: params);
+        final list = result['data']['list'] as List;
+        return list.map((e) => GiftRecord.fromJson(e)).toList();
+    }
+
+    // ============ 金币模块 ============
+
+    Future<double> getCoinBalance() async {
+        final result = await _request('GET', '/coins/balance');
+        return double.tryParse(result['data']['coin_balance']?.toString() ?? '0') ?? 0;
+    }
+
+    Future<void> distributeCoins({required String account, required double amount, required String distributePassword}) async {
+        await _request('POST', '/coins/distribute', body: {'account': account, 'amount': amount, 'distribute_password': distributePassword});
+    }
+
+    // ============ 钻石模块 ============
+
+    Future<double> getDiamondBalance() async {
+        final result = await _request('GET', '/diamonds/balance');
+        return double.tryParse(result['data']['diamond_balance']?.toString() ?? '0') ?? 0;
+    }
+
+    Future<void> withdraw({required double amount, required String paymentAddress, String paymentMethod = 'usdt'}) async {
+        await _request('POST', '/diamonds/withdraw', body: {'amount': amount, 'payment_address': paymentAddress, 'payment_method': paymentMethod});
+    }
+
+    Future<int> getWithdrawRate() async {
+        final result = await _request('GET', '/diamonds/withdraw/rate');
+        return int.tryParse(result['data']['exchange_rate']?.toString() ?? '10000') ?? 10000;
+    }
+
+    // ============ 1对1聊天模块 ============
+
+    Future<List<Conversation>> getConversations() async {
+        final result = await _request('GET', '/chat/conversations');
+        final list = result['data']['list'] as List;
+        return list.map((e) => Conversation.fromJson(e)).toList();
+    }
+
+    Future<List<PrivateMessage>> getMessages(String oderId, {int page = 1, int limit = 50}) async {
+        final result = await _request('GET', '/chat/messages/$oderId', queryParams: {'page': page.toString(), 'limit': limit.toString()});
+        final list = result['data']['list'] as List;
+        return list.map((e) => PrivateMessage.fromJson(e)).toList();
+    }
+
+    Future<Map<String, dynamic>> sendMessage({required String receiverId, required String type, required String content}) async {
+        final result = await _request('POST', '/chat/send', body: {'receiver_id': receiverId, 'type': type, 'content': content});
+        return result['data'];
+    }
+
     Future<int> getUnreadCount() async {
         final result = await _request('GET', '/chat/unread');
         return result['data']['unread_count'] ?? 0;
@@ -528,39 +350,19 @@ class ApiService {
 
     // ============ 视频通话模块 ============
 
-    /// 发起视频通话
     Future<Map<String, dynamic>> startVideoCall(String receiverId) async {
-        final result = await _request('POST', '/video/call', body: {
-            'receiver_id': receiverId,
-        });
+        final result = await _request('POST', '/video/call', body: {'receiver_id': receiverId});
         return result['data'];
     }
 
-    /// 接听通话
-    Future<void> acceptVideoCall(String callId) async {
-        await _request('PUT', '/video/call/$callId/accept');
-    }
-
-    /// 拒绝通话
-    Future<void> rejectVideoCall(String callId) async {
-        await _request('PUT', '/video/call/$callId/reject');
-    }
-
-    /// 结束通话
-    Future<void> endVideoCall(String callId, int duration) async {
-        await _request('PUT', '/video/call/$callId/end', body: {
-            'duration': duration,
-        });
-    }
+    Future<void> acceptVideoCall(String callId) async => await _request('PUT', '/video/call/$callId/accept');
+    Future<void> rejectVideoCall(String callId) async => await _request('PUT', '/video/call/$callId/reject');
+    Future<void> endVideoCall(String callId, int duration) async => await _request('PUT', '/video/call/$callId/end', body: {'duration': duration});
 }
 
-/**
- * API异常
- */
 class ApiException implements Exception {
     final String message;
     ApiException(this.message);
-    
     @override
     String toString() => message;
 }
