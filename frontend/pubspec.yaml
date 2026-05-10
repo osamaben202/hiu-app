@@ -1,0 +1,63 @@
+name: hiu_app
+description: HIU Voice Room Social App
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+  
+  # 状态管理
+  provider: ^6.1.1
+  
+  # 网络请求
+  http: ^1.1.0
+  
+  # WebSocket
+  socket_io_client: ^2.0.3+1
+  
+  # 本地存储
+  shared_preferences: ^2.2.2
+  
+  # 图片选择
+  image_picker: ^1.0.7
+  
+  # 声网SDK
+  agora_rtc_engine: ^6.2.2
+  
+  # 权限
+  permission_handler: ^11.1.0
+  
+  # 相机
+  camera: ^0.10.5+9
+  
+  # 国际化
+  intl: ^0.18.1
+  
+  # Toast提示
+  fluttertoast: ^8.2.2
+  
+  # 动画
+  lottie: ^3.0.0
+  
+  # 下拉刷新
+  pull_to_refresh: ^2.0.0
+  
+  # 加载动画
+  flutter_spinkit: ^5.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/images/
+    - assets/icons/
