@@ -4,7 +4,10 @@
 const { Pool } = require('pg');
 const config = require('../config');
 
-const pool = new Pool(config.db);
+// Railway provides DATABASE_URL, use it if available
+const pool = process.env.DATABASE_URL
+    ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } })
+    : new Pool(config.db);
 
 // 连接测试
 pool.on('connect', () => {
