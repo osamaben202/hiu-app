@@ -2,6 +2,7 @@
  * API服务 - 封装所有HTTP请求
  */
 import 'dart:convert';
+import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
@@ -15,10 +16,42 @@ class ApiService {
     
     String? _token;
     String? _refreshToken;
+    static bool _backendAvailable = true;
 
     static final ApiService _instance = ApiService._internal();
     factory ApiService() => _instance;
     ApiService._internal();
+
+    /// 检测后端是否可用
+    static Future<bool> checkBackendAvailable() async {
+        try {
+            final uri = Uri.parse('$baseUrl/health');
+            final response = await http.get(uri).timeout(
+                const Duration(seconds: 3),
+            );
+            _backendAvailable = response.statusCode == 200;
+        } catch (e) {
+            _backendAvailable = false;
+        }
+        return _backendAvailable;
+    }
+
+    /// 后端是否可用
+    static bool get backendAvailable => _backendAvailable;
+
+    /// 生成随机账号ID
+    static String generateAccountId() {
+        final random = Random();
+        final number = random.nextInt(900000) + 100000;
+        return 'U$number';
+    }
+
+    /// 生成随机密码
+    static String generatePassword() {
+        const chars = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        final random = Random();
+        return List.generate(8, (_) => chars[random.nextInt(chars.length)]).join();
+    }
 
     // 设置Token
     void setToken(String token, [String? refreshToken]) {
