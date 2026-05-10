@@ -2,8 +2,11 @@
  * API服务 - 封装所有HTTP请求
  */
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import '../models/room.dart';
@@ -453,6 +456,45 @@ class ApiService {
         });
         final list = result['data']['list'] as List;
         return list.map((e) => PrivateMessage.fromJson(e)).toList();
+    }
+
+
+    /// 上传头像
+    Future<String?> uploadAvatar(File imageFile) async {
+        try {
+            final uri = Uri.parse('$baseUrl/upload/avatar');
+            final request = http.MultipartRequest('POST', uri);
+            
+            if (_token != null) {
+                request.headers['Authorization'] = 'Bearer $_token';
+            }
+            
+            final ext = imageFile.path.split('.').last.toLowerCase();
+            final mimeType = ext == 'png' ? 'image/png' : ext == 'gif' ? 'image/gif' : 'image/jpeg';
+            
+            request.files.add(
+                await http.MultipartFile.fromPath(
+                    'avatar',
+                    imageFile.path,
+                    contentType: MediaType.parse(mimeType),
+                ),
+            );
+            
+            final streamedResponse = await request.send();
+            final response = await http.Response.fromStream(streamedResponse);
+            final data = jsonDecode(response.body);
+            
+            if (data['code'] == 0 && data['data'] != null) {
+                // Return full URL
+                final url = data['data']['url'];
+                if (url.startsWith('http')) return url;
+                return '$baseUrl'.replaceAll('/api', '') + url;
+            }
+            return null;
+        } catch (e) {
+            debugPrint('Upload avatar error: $e');
+            return null;
+        }
     }
 
     /// 发送消息
