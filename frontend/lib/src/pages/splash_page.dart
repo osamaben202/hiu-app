@@ -61,22 +61,16 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
         if (!isRegistered) {
             // 首次使用，自动注册
             final success = await userProvider.register(silent: true);
-            if (mounted) {
-                if (success && userProvider.currentUser != null) {
-                    // 注册成功，显示密码对话框
-                    Navigator.of(context).pushReplacement(
-                        MaterialPageRoute(
-                            builder: (_) => const HomePage(),
-                        ),
-                    );
-                    // 显示密码提示
-                    _showPasswordDialog();
-                } else {
-                    // 注册失败，进入登录页
-                    Navigator.of(context).pushReplacement(
-                        MaterialPageRoute(builder: (_) => const LoginPage()),
-                    );
-                }
+            if (!mounted) return;
+            
+            if (success && userProvider.currentUser != null) {
+                // 注册成功，显示密码对话框后再进入首页
+                await _showPasswordDialogAndNavigate(userProvider);
+            } else {
+                // 注册失败，进入登录页
+                Navigator.of(context).pushReplacement(
+                    MaterialPageRoute(builder: (_) => const LoginPage()),
+                );
             }
         } else {
             // 已有账号，自动登录
@@ -92,49 +86,56 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
         }
     }
 
-    void _showPasswordDialog() {
-        final userProvider = Provider.of<UserProvider>(context, listen: false);
+    Future<void> _showPasswordDialogAndNavigate(UserProvider userProvider) async {
+        // 创建对话框key用于控制导航
+        bool dialogCompleted = false;
         
-        // 延迟显示密码对话框
-        Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted) {
-                showDialog(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (context) => AlertDialog(
-                        title: const Row(
-                            children: [
-                                Icon(Icons.check_circle, color: Colors.green),
-                                SizedBox(width: 10),
-                                Text('注册成功'),
-                            ],
+        // 显示密码对话框
+        await showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (dialogContext) => AlertDialog(
+                title: const Row(
+                    children: [
+                        Icon(Icons.check_circle, color: Colors.green),
+                        SizedBox(width: 10),
+                        Text('注册成功'),
+                    ],
+                ),
+                content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                        const Text(
+                            '请牢记您的账号和密码，建议截图保存',
+                            style: TextStyle(color: Colors.orange),
                         ),
-                        content: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                                const Text(
-                                    '请牢记您的账号和密码，建议截图保存',
-                                    style: TextStyle(color: Colors.orange),
-                                ),
-                                const SizedBox(height: 20),
-                                _PasswordRow(label: '账号', value: userProvider.localAccount ?? ''),
-                                const SizedBox(height: 10),
-                                _PasswordRow(label: '密码', value: userProvider.password ?? ''),
-                            ],
-                        ),
-                        actions: [
-                            TextButton(
-                                onPressed: () {
-                                    Navigator.of(context).pop();
-                                },
-                                child: const Text('我已保存'),
-                            ),
-                        ],
+                        const SizedBox(height: 20),
+                        _PasswordRow(label: '账号', value: userProvider.localAccount ?? ''),
+                        const SizedBox(height: 10),
+                        _PasswordRow(label: '密码', value: userProvider.password ?? ''),
+                    ],
+                ),
+                actions: [
+                    TextButton(
+                        onPressed: () {
+                            dialogCompleted = true;
+                            Navigator.of(dialogContext).pop();
+                        },
+                        child: const Text('我已保存'),
                     ),
-                );
-            }
-        });
+                ],
+            ),
+        );
+        
+        if (!mounted) return;
+        
+        // 对话框关闭后进入首页
+        Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+                builder: (_) => const HomePage(),
+            ),
+        );
     }
 
     @override

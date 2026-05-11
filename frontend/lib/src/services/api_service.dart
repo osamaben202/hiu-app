@@ -276,6 +276,10 @@ class ApiService {
 
     Future<void> closeRoom(String roomId) async => await _request('DELETE', '/rooms/$roomId');
 
+    /// 转移房主
+    Future<void> transferRoomOwner(String roomId, String newOwnerId) async =>
+        await _request(POST, /rooms//transfer-owner, body: {new_owner_id: newOwnerId});
+
     // ============ 礼物模块 ============
 
     Future<List<Gift>> getGifts() async {

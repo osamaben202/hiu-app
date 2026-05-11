@@ -29,6 +29,9 @@ class _RoomPageState extends State<RoomPage> {
     
     io.Socket? _socket;
     bool _isConnected = false;
+    bool _isLoading = true;
+    Room? _room;
+    RoomProvider? _roomProvider;
 
     @override
     void initState() {
@@ -38,8 +41,15 @@ class _RoomPageState extends State<RoomPage> {
     }
 
     Future<void> _loadRoom() async {
-        await Provider.of<RoomProvider>(context, listen: false).fetchRoomDetail(widget.roomId);
-        await Provider.of<RoomProvider>(context, listen: false).fetchGifts();
+        _roomProvider = Provider.of<RoomProvider>(context, listen: false);
+        await _roomProvider!.fetchRoomDetail(widget.roomId);
+        await _roomProvider!.fetchGifts();
+        if (mounted) {
+            setState(() {
+                _room = _roomProvider!.currentRoom;
+                _isLoading = false;
+            });
+        }
     }
 
     void _initSocket() {
@@ -57,6 +67,9 @@ class _RoomPageState extends State<RoomPage> {
                 .setTransports(['websocket'])
                 .disableAutoConnect()
                 .setAuth({'token': token})
+                .setTimeout(10000)
+                .setReconnectionAttempts(5)
+                .setReconnectionDelay(1000)
                 .build(),
         );
 
@@ -72,14 +85,19 @@ class _RoomPageState extends State<RoomPage> {
             setState(() => _isConnected = false);
         });
 
+        _socket?.onConnectError((error) {
+            debugPrint('Socket connect error: $error');
+            setState(() => _isConnected = false);
+        });
+
         _socket?.onError((error) {
             debugPrint('Socket error: $error');
         });
 
-        // 监听聊天消息
+        // 监听聊天消息 - 确保消息持久化到列表
         _socket?.on('chat_message', (data) {
             debugPrint('Received chat message: $data');
-            if (data != null) {
+            if (data != null && data['content'] != null) {
                 final message = ChatMessage(
                     id: data['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
                     roomId: data['room_id']?.toString(),
@@ -118,8 +136,132 @@ class _RoomPageState extends State<RoomPage> {
             }
         });
 
+        // 监听好友申请通知
+        _socket?.on('friend_request', (data) {
+            debugPrint('Received friend request: $data');
+            if (data != null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content: Text('${data['requester_nickname'] ?? 'Someone'} sent you a friend request'),
+                        backgroundColor: Colors.green,
+                        action: SnackBarAction(
+                            label: 'View',
+                            textColor: Colors.white,
+                            onPressed: () {
+                                // 切换到好友页面
+                            },
+                        ),
+                    ),
+                );
+            }
+        });
+
+        // 监听上麦申请通知（房主收到）
+        _socket?.on('seat_request', (data) {
+            debugPrint('Received seat request: $data');
+            if (data != null && mounted) {
+                _showSeatRequestDialog(data);
+            }
+        });
+
+        // 监听上麦申请已发送确认
+        _socket?.on('seat_request_sent', (data) {
+            debugPrint('Seat request sent: $data');
+            if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Request sent, waiting for approval...')),
+                );
+            }
+        });
+
+        // 监听上麦被批准
+        _socket?.on('seat_approved', (data) {
+            debugPrint('Seat approved: $data');
+            if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Your seat request was approved!'), backgroundColor: Colors.green),
+                );
+                // 刷新房间详情
+                _roomProvider?.fetchRoomDetail(widget.roomId);
+            }
+        });
+
+        // 监听上麦被拒绝
+        _socket?.on('seat_rejected', (data) {
+            debugPrint('Seat rejected: $data');
+            if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Your seat request was rejected', backgroundColor: Colors.orange)),
+                );
+            }
+        });
+
+        // 监听麦位更新
+        _socket?.on('seat_update', (data) {
+            debugPrint('Seat update: $data');
+            // 刷新房间详情以获取最新状态
+            _roomProvider?.fetchRoomDetail(widget.roomId);
+        });
+
         // 连接
         _socket?.connect();
+    }
+
+    void _showSeatRequestDialog(Map<String, dynamic> data) {
+        final user = Provider.of<UserProvider>(context, listen: false).currentUser;
+        if (user == null || _room == null) return;
+        if (_room!.ownerId != user.id) return; // 只有房主能收到
+
+        showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+                title: const Text('Seat Request'),
+                content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                        CircleAvatar(
+                            radius: 30,
+                            backgroundColor: const Color(0xFF6C5CE7).withOpacity(0.2),
+                            backgroundImage: data['requester_avatar'] != null && data['requester_avatar'].toString().isNotEmpty
+                                ? NetworkImage(data['requester_avatar'].toString()) as ImageProvider
+                                : null,
+                            child: data['requester_avatar'] == null || data['requester_avatar'].toString().isEmpty
+                                ? Text((data['requester_nickname'] ?? 'U')[0].toUpperCase())
+                                : null,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                            '${data['requester_nickname'] ?? 'Unknown'} wants to join seat ${(data['seat_index'] ?? 0) + 1}',
+                            textAlign: TextAlign.center,
+                        ),
+                    ],
+                ),
+                actions: [
+                    TextButton(
+                        onPressed: () {
+                            Navigator.pop(context);
+                            _socket?.emit('reject_seat', {
+                                'room_id': widget.roomId,
+                                'seat_index': data['seat_index'],
+                                'requester_id': data['requester_id'],
+                            });
+                        },
+                        child: const Text('Reject'),
+                    ),
+                    ElevatedButton(
+                        onPressed: () {
+                            Navigator.pop(context);
+                            _socket?.emit('approve_seat', {
+                                'room_id': widget.roomId,
+                                'seat_index': data['seat_index'],
+                                'requester_id': data['requester_id'],
+                            });
+                        },
+                        child: const Text('Approve'),
+                    ),
+                ],
+            ),
+        );
     }
 
     @override
@@ -158,7 +300,7 @@ class _RoomPageState extends State<RoomPage> {
         if (confirmed == true && mounted) {
             // 离开房间
             _socket?.emit('leave_room', {'room_id': widget.roomId});
-            await Provider.of<RoomProvider>(context, listen: false).leaveRoom(widget.roomId);
+            await _roomProvider?.leaveRoom(widget.roomId);
             if (mounted) {
                 Navigator.of(context).pop();
             }
@@ -185,11 +327,10 @@ class _RoomPageState extends State<RoomPage> {
     }
 
     void _showGiftPanel() {
-        final room = Provider.of<RoomProvider>(context, listen: false).currentRoom;
-        if (room == null) return;
+        if (_room == null) return;
 
         // 找出麦上的人
-        final seats = room.seats.where((s) => s.isOccupied).toList();
+        final seats = _room!.seats.where((s) => s.isOccupied).toList();
         if (seats.isEmpty) {
             ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('No one on mic to send gift to')),
@@ -239,353 +380,439 @@ class _RoomPageState extends State<RoomPage> {
     }
 
     void _showRoomSettings() {
-        // TODO: 显示房间设置
+        final user = Provider.of<UserProvider>(context, listen: false).currentUser;
+        if (user == null || _room == null) return;
+        
+        final isOwner = _room!.ownerId == user.id;
+        
+        showModalBottomSheet(
+            context: context,
+            backgroundColor: Colors.transparent,
+            builder: (context) => Container(
+                decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                child: SafeArea(
+                    child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                            ListTile(
+                                leading: const Icon(Icons.settings),
+                                title: const Text('Room Settings'),
+                                onTap: isOwner ? () {
+                                    Navigator.pop(context);
+                                    // TODO: Navigate to room settings
+                                } : null,
+                            ),
+                            if (isOwner)
+                                ListTile(
+                                    leading: const Icon(Icons.close, color: Colors.red),
+                                    title: const Text('Close Room', style: TextStyle(color: Colors.red)),
+                                    onTap: () async {
+                                        Navigator.pop(context);
+                                        await _showCloseRoomDialog();
+                                    },
+                                ),
+                            ListTile(
+                                leading: const Icon(Icons.exit_to_app),
+                                title: const Text('Leave Room'),
+                                onTap: () {
+                                    Navigator.pop(context);
+                                    _leaveRoom();
+                                },
+                            ),
+                        ],
+                    ),
+                ),
+            ),
+        );
+    }
+
+    Future<void> _showCloseRoomDialog() async {
+        final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+                title: const Text('Close Room'),
+                content: const Text('Are you sure you want to close this room? All users will be removed.'),
+                actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Cancel'),
+                    ),
+                    ElevatedButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                        child: const Text('Close', style: TextStyle(color: Colors.white)),
+                    ),
+                ],
+            ),
+        );
+
+        if (confirmed == true && mounted) {
+            final success = await _roomProvider?.closeRoom();
+            if (success == true && mounted) {
+                Navigator.of(context).pop();
+            }
+        }
+    }
+
+    void _onSeatTap(RoomSeat seat) {
+        if (seat.isOccupied) {
+            _showUserProfileCard(seat);
+        } else if (!seat.isLocked) {
+            // 空座位，点击申请上麦
+            _showJoinSeatDialog(seat.seatIndex);
+        }
+    }
+
+    void _showJoinSeatDialog(int seatIndex) async {
+        final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+                title: const Text('Join Seat'),
+                content: Text('Do you want to request to join seat ${seatIndex + 1}?'),
+                actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Cancel'),
+                    ),
+                    ElevatedButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('Request'),
+                    ),
+                ],
+            ),
+        );
+
+        if (confirmed == true && mounted) {
+            // 通过 socket 发送上麦申请
+            _socket?.emit('seat_request', {
+                'room_id': widget.roomId,
+                'seat_index': seatIndex,
+            });
+        }
+    }
+
+    void _onMicToggle(RoomSeat seat) async {
+        final user = Provider.of<UserProvider>(context, listen: false).currentUser;
+        if (user == null || _room == null) return;
+        
+        final isOwner = _room!.ownerId == user.id;
+        final isMe = seat.userId == user.id;
+        
+        if (isMe) {
+            // 自己下麦
+            await _roomProvider?.leaveSeat(seat.seatIndex);
+        } else if (isOwner) {
+            // 房主可以闭麦
+            await _roomProvider?.muteSeat(seat.seatIndex, !seat.isMuted);
+        }
     }
 
     @override
     Widget build(BuildContext context) {
-        final user = Provider.of<UserProvider>(context, listen: false).currentUser;
-        final roomProvider = Provider.of<RoomProvider>(context, listen: false);
-        final room = roomProvider.currentRoom;
-
-        if (room == null) {
+        if (_isLoading) {
             return Scaffold(
-                appBar: AppBar(title: const Text('Loading...')),
+                backgroundColor: const Color(0xFF1A1A2E),
                 body: const Center(child: CircularProgressIndicator()),
             );
         }
 
-        final isOwner = room.ownerId == user?.id;
-
         return Scaffold(
             backgroundColor: const Color(0xFF1A1A2E),
-            appBar: AppBar(
-                backgroundColor: const Color(0xFF1A1A2E),
-                title: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            body: SafeArea(
+                child: Column(
                     children: [
-                        Text(
-                            room.name,
-                            style: const TextStyle(fontSize: 16),
+                        // 顶部栏
+                        _buildTopBar(),
+                        // 麦位区域
+                        _buildSeatsArea(),
+                        // 消息列表
+                        Expanded(
+                            child: _MessagesList(
+                                messages: _messages,
+                                scrollController: _scrollController,
+                            ),
                         ),
-                        Row(
+                        // 输入框
+                        _MessageInput(
+                            controller: _messageController,
+                            onSend: _sendMessage,
+                            onGift: _showGiftPanel,
+                        ),
+                    ],
+                ),
+            ),
+        );
+    }
+
+    Widget _buildTopBar() {
+        final user = Provider.of<UserProvider>(context, listen: false).currentUser;
+        final isOwner = _room?.ownerId == user?.id;
+
+        return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            color: const Color(0xFF16213E),
+            child: Row(
+                children: [
+                    IconButton(
+                        icon: const Icon(Icons.arrow_back, color: Colors.white),
+                        onPressed: () {
+                            if (isOwner) {
+                                _showOwnerLeaveDialog();
+                            } else {
+                                _leaveRoom();
+                            }
+                        },
+                    ),
+                    Expanded(
+                        child: Column(
                             children: [
                                 Text(
-                                    '${room.onlineCount} online',
-                                    style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.white.withOpacity(0.7),
+                                    _room?.name ?? 'Voice Room',
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
                                     ),
                                 ),
-                                const SizedBox(width: 8),
-                                Container(
-                                    width: 8,
-                                    height: 8,
-                                    decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: _isConnected ? Colors.green : Colors.red,
+                                Text(
+                                    'Online: ${_room?.onlineCount ?? 0}',
+                                    style: TextStyle(
+                                        color: Colors.white.withOpacity(0.7),
+                                        fontSize: 12,
                                     ),
                                 ),
                             ],
                         ),
-                    ],
-                ),
-                actions: [
-                    if (isOwner)
-                        IconButton(
-                            icon: const Icon(Icons.settings),
-                            onPressed: () => _showRoomSettings(),
-                        ),
+                    ),
                     IconButton(
-                        icon: const Icon(Icons.exit_to_app),
-                        onPressed: _leaveRoom,
-                    ),
-                ],
-            ),
-            body: Column(
-                children: [
-                    // 麦位区域
-                    Expanded(
-                        flex: 2,
-                        child: _SeatsArea(
-                            seats: room.seats,
-                            isOwner: isOwner,
-                            roomId: widget.roomId,
-                            onUserTap: _showUserProfileCard,
-                        ),
-                    ),
-
-                    // 聊天区域
-                    Expanded(
-                        flex: 3,
-                        child: Container(
-                            decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: const BorderRadius.vertical(
-                                    top: Radius.circular(20),
-                                ),
-                            ),
-                            child: Column(
-                                children: [
-                                    // 消息列表
-                                    Expanded(
-                                        child: _MessagesList(
-                                            messages: _messages,
-                                            scrollController: _scrollController,
-                                        ),
-                                    ),
-
-                                    // 输入栏
-                                    _MessageInput(
-                                        controller: _messageController,
-                                        onSend: _sendMessage,
-                                        onGift: _showGiftPanel,
-                                    ),
-                                ],
-                            ),
-                        ),
-                    ),
-                ],
-            ),
-        );
-    }
-}
-
-/**
- * 麦位区域
- */
-class _SeatsArea extends StatelessWidget {
-    final List<RoomSeat> seats;
-    final bool isOwner;
-    final String roomId;
-    final Function(RoomSeat) onUserTap;
-
-    const _SeatsArea({
-        required this.seats,
-        required this.isOwner,
-        required this.roomId,
-        required this.onUserTap,
-    });
-
-    @override
-    Widget build(BuildContext context) {
-        return Container(
-            padding: const EdgeInsets.all(16),
-            child: GridView.builder(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 4,
-                    childAspectRatio: 0.8,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                ),
-                itemCount: 8,
-                itemBuilder: (context, index) {
-                    final seat = seats.length > index ? seats[index] : null;
-                    return _SeatItem(
-                        seatIndex: index,
-                        seat: seat,
-                        isOwner: isOwner,
-                        roomId: roomId,
-                        onUserTap: onUserTap,
-                    );
-                },
-            ),
-        );
-    }
-}
-
-/**
- * 麦位单项
- */
-class _SeatItem extends StatelessWidget {
-    final int seatIndex;
-    final RoomSeat? seat;
-    final bool isOwner;
-    final String roomId;
-    final Function(RoomSeat) onUserTap;
-
-    bool get isOccupied => seat?.isOccupied ?? false;
-
-    const _SeatItem({
-        required this.seatIndex,
-        this.seat,
-        required this.isOwner,
-        required this.roomId,
-        required this.onUserTap,
-    });
-
-    @override
-    Widget build(BuildContext context) {
-
-        final isMuted = seat?.isMuted ?? true;
-        final isLocked = seat?.isLocked ?? false;
-
-        return GestureDetector(
-            onTap: () => _handleTap(context),
-            onLongPress: isOccupied ? () => onUserTap(seat!) : null,
-            child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                    Stack(
-                        alignment: Alignment.center,
-                        children: [
-                            // 头像
-                            Container(
-                                width: 55,
-                                height: 55,
-                                decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                        color: isOccupied
-                                            ? const Color(0xFF6C5CE7)
-                                            : Colors.grey.withOpacity(0.3),
-                                        width: 2,
-                                    ),
-                                    color: isOccupied
-                                        ? const Color(0xFF6C5CE7).withOpacity(0.2)
-                                        : Colors.grey.withOpacity(0.1),
-                                ),
-                                child: seat?.avatar != null && seat!.avatar!.isNotEmpty
-                                    ? ClipOval(
-                                        child: Image.network(
-                                            seat!.avatar!,
-                                            fit: BoxFit.cover,
-                                            errorBuilder: (_, __, ___) => _buildDefaultAvatar(),
-                                        ),
-                                    )
-                                    : _buildDefaultAvatar(),
-                            ),
-                            // 闭麦标记
-                            if (isOccupied && isMuted)
-                                Positioned(
-                                    right: 0,
-                                    bottom: 0,
-                                    child: Container(
-                                        padding: const EdgeInsets.all(4),
-                                        decoration: const BoxDecoration(
-                                            color: Colors.red,
-                                            shape: BoxShape.circle,
-                                        ),
-                                        child: const Icon(
-                                            Icons.mic_off,
-                                            size: 12,
-                                            color: Colors.white,
-                                        ),
-                                    ),
-                                ),
-                            // 锁定标记
-                            if (isLocked)
-                                Positioned(
-                                    left: 0,
-                                    top: 0,
-                                    child: Container(
-                                        padding: const EdgeInsets.all(2),
-                                        decoration: const BoxDecoration(
-                                            color: Colors.orange,
-                                            shape: BoxShape.circle,
-                                        ),
-                                        child: const Icon(
-                                            Icons.lock,
-                                            size: 12,
-                                            color: Colors.white,
-                                        ),
-                                    ),
-                                ),
-                        ],
-                    ),
-                    const SizedBox(height: 4),
-                    // 昵称
-                    Text(
-                        isOccupied
-                            ? (seat?.nickname ?? 'User')
-                            : (isLocked ? 'Locked' : 'Empty'),
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: isOccupied ? Colors.white : Colors.grey,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        icon: const Icon(Icons.more_vert, color: Colors.white),
+                        onPressed: _showRoomSettings,
                     ),
                 ],
             ),
         );
     }
 
-    Widget _buildDefaultAvatar() {
-        return Center(
-            child: isOccupied
-                ? Text(
-                    (seat?.nickname ?? 'U')[0].toUpperCase(),
-                    style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF6C5CE7),
+    Future<void> _showOwnerLeaveDialog() async {
+        final action = await showDialog<String>(
+            context: context,
+            builder: (context) => AlertDialog(
+                title: const Text('Room Owner Leaving'),
+                content: const Text('As the room owner, what would you like to do?'),
+                actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(context, 'cancel'),
+                        child: const Text('Cancel'),
                     ),
-                )
-                : Icon(
-                    Icons.add,
-                    color: Colors.grey[400],
-                ),
+                    TextButton(
+                        onPressed: () => Navigator.pop(context, 'transfer'),
+                        child: const Text('Transfer Owner'),
+                    ),
+                    ElevatedButton(
+                        onPressed: () => Navigator.pop(context, 'close'),
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                        child: const Text('Close Room', style: TextStyle(color: Colors.white)),
+                    ),
+                ],
+            ),
         );
+
+        if (action == 'close' && mounted) {
+            await _showCloseRoomDialog();
+        } else if (action == 'transfer' && mounted) {
+            await _showTransferOwnerDialog();
+        }
     }
 
-    void _handleTap(BuildContext context) {
-        final user = Provider.of<UserProvider>(context, listen: false).currentUser;
+    Future<void> _showTransferOwnerDialog() async {
+        if (_room == null) return;
         
-        if (seat?.isLocked ?? false) {
-            ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('This seat is locked')),
-            );
+        final seatsOnMic = _room!.seats.where((s) => s.isOccupied).toList();
+        if (seatsOnMic.isEmpty) {
+            if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('No one on mic to transfer to')),
+                );
+            }
             return;
         }
 
-        if (seat?.isOccupied ?? false) {
-            // 点击已占麦位
-            if (seat?.userId == user?.id) {
-                // 自己的麦位，下麦
-                Provider.of<RoomProvider>(context, listen: false).leaveSeat(seatIndex);
-            } else if (isOwner) {
-                // 房主踢人
-                _showKickDialog(context);
-            } else {
-                // 长按显示资料卡
-                onUserTap(seat!);
-            }
-        } else {
-            // 空麦位，上麦
-            Provider.of<RoomProvider>(context, listen: false).joinSeat(seatIndex);
-        }
-    }
-
-    void _showKickDialog(BuildContext context) {
-        showDialog(
+        final selectedUser = await showDialog<String>(
             context: context,
             builder: (context) => AlertDialog(
-                title: const Text('Kick User'),
-                content: Text('Kick ${seat?.nickname} from this seat?'),
+                title: const Text('Transfer Owner'),
+                content: SizedBox(
+                    width: double.maxFinite,
+                    child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: seatsOnMic.length,
+                        itemBuilder: (context, index) {
+                            final seat = seatsOnMic[index];
+                            return ListTile(
+                                leading: CircleAvatar(
+                                    backgroundColor: const Color(0xFF6C5CE7).withOpacity(0.2),
+                                    backgroundImage: seat.avatar != null && seat.avatar!.isNotEmpty
+                                        ? NetworkImage(seat.avatar!) as ImageProvider
+                                        : null,
+                                    child: seat.avatar == null || seat.avatar!.isEmpty
+                                        ? Text((seat.nickname ?? 'U')[0].toUpperCase())
+                                        : null,
+                                ),
+                                title: Text(seat.nickname ?? 'Unknown'),
+                                onTap: () => Navigator.pop(context, seat.userId),
+                            );
+                        },
+                    ),
+                ),
                 actions: [
                     TextButton(
                         onPressed: () => Navigator.pop(context),
                         child: const Text('Cancel'),
                     ),
-                    ElevatedButton(
-                        onPressed: () {
-                            Navigator.pop(context);
-                            Provider.of<RoomProvider>(context, listen: false)
-                                .kickSeat(seatIndex);
+                ],
+            ),
+        );
+
+        if (selectedUser != null && mounted) {
+            try {
+                // 调用转移房主API
+                await ApiService().transferRoomOwner(_room!.id, selectedUser);
+                if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Owner transferred successfully')),
+                    );
+                    await _roomProvider?.leaveRoom(_room!.id);
+                    if (mounted) {
+                        Navigator.of(context).pop();
+                    }
+                }
+            } catch (e) {
+                if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Transfer failed: $e'), backgroundColor: Colors.red),
+                    );
+                }
+            }
+        }
+    }
+
+    Widget _buildSeatsArea() {
+        if (_room == null) {
+            return const SizedBox(height: 200);
+        }
+
+        return Container(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+                children: [
+                    // 房间信息
+                    if (_room!.cover != null && _room!.cover!.isNotEmpty)
+                        Container(
+                            height: 100,
+                            margin: const EdgeInsets.only(bottom: 16),
+                            decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                image: DecorationImage(
+                                    image: NetworkImage(_room!.cover!),
+                                    fit: BoxFit.cover,
+                                ),
+                            ),
+                        ),
+                    // 麦位网格
+                    GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 4,
+                            childAspectRatio: 0.8,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
+                        ),
+                        itemCount: _room!.seats.length,
+                        itemBuilder: (context, index) {
+                            final seat = _room!.seats[index];
+                            return _buildSeatItem(seat);
                         },
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                        child: const Text('Kick', style: TextStyle(color: Colors.white)),
                     ),
+                ],
+            ),
+        );
+    }
+
+    Widget _buildSeatItem(RoomSeat seat) {
+        final isOccupied = seat.isOccupied;
+        final isLocked = seat.isLocked;
+        final isMuted = seat.isMuted;
+
+        return GestureDetector(
+            onTap: () => _onSeatTap(seat),
+            child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                    // 头像/空位
+                    Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                            color: isLocked
+                                ? Colors.grey.withOpacity(0.3)
+                                : isOccupied
+                                    ? const Color(0xFF6C5CE7).withOpacity(0.2)
+                                    : Colors.grey.withOpacity(0.1),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                                color: isOccupied ? const Color(0xFF6C5CE7) : Colors.grey.withOpacity(0.3),
+                                width: 2,
+                            ),
+                        ),
+                        child: isLocked
+                            ? const Icon(Icons.lock, color: Colors.grey)
+                            : isOccupied
+                                ? ClipOval(
+                                    child: seat.avatar != null && seat.avatar!.isNotEmpty
+                                        ? Image.network(seat.avatar!, fit: BoxFit.cover)
+                                        : Center(
+                                            child: Text(
+                                                (seat.nickname ?? 'U')[0].toUpperCase(),
+                                                style: const TextStyle(
+                                                    fontSize: 24,
+                                                    color: Color(0xFF6C5CE7),
+                                                ),
+                                            ),
+                                        ),
+                                )
+                                : Icon(Icons.add, color: Colors.grey.withOpacity(0.5)),
+                    ),
+                    const SizedBox(height: 4),
+                    // 昵称/座位号
+                    Text(
+                        isOccupied
+                            ? (seat.nickname ?? 'User')
+                            : isLocked
+                                ? 'Locked'
+                                : 'Seat ${seat.seatIndex + 1}',
+                        style: TextStyle(
+                            color: Colors.white.withOpacity(0.8),
+                            fontSize: 12,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                    ),
+                    // 麦克风状态
+                    if (isOccupied)
+                        Icon(
+                            isMuted ? Icons.mic_off : Icons.mic,
+                            size: 16,
+                            color: isMuted ? Colors.red : Colors.green,
+                        ),
                 ],
             ),
         );
     }
 }
 
-/**
- * 座位用户资料卡
- */
 class _SeatUserProfileCard extends StatelessWidget {
     final User user;
     final RoomSeat seat;
@@ -610,7 +837,6 @@ class _SeatUserProfileCard extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                         const SizedBox(height: 20),
-                        // 头像
                         CircleAvatar(
                             radius: 50,
                             backgroundColor: const Color(0xFF6C5CE7).withOpacity(0.2),
@@ -620,47 +846,21 @@ class _SeatUserProfileCard extends StatelessWidget {
                             child: user.avatar.isEmpty
                                 ? Text(
                                     (user.nickname.isEmpty ? 'U' : user.nickname[0]).toUpperCase(),
-                                    style: const TextStyle(
-                                        fontSize: 36,
-                                        color: Color(0xFF6C5CE7),
-                                    ),
+                                    style: const TextStyle(fontSize: 36, color: Color(0xFF6C5CE7)),
                                 )
                                 : null,
                         ),
                         const SizedBox(height: 16),
-                        // 昵称
                         Text(
                             user.nickname.isEmpty ? user.account : user.nickname,
-                            style: const TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                            ),
+                            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 8),
-                        // ID
                         Text(
                             'ID: ${user.account}',
-                            style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey[600],
-                            ),
+                            style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                         ),
-                        const SizedBox(height: 8),
-                        // 签名
-                        if (user.signature.isNotEmpty)
-                            Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 32),
-                                child: Text(
-                                    user.signature,
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                        fontSize: 14,
-                                        color: Colors.grey[500],
-                                    ),
-                                ),
-                            ),
                         const SizedBox(height: 24),
-                        // 操作按钮
                         if (!isSelf)
                             Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -768,18 +968,12 @@ class _ActionButton extends StatelessWidget {
                             color: (color ?? const Color(0xFF6C5CE7)).withOpacity(0.1),
                             shape: BoxShape.circle,
                         ),
-                        child: Icon(
-                            icon,
-                            color: color ?? const Color(0xFF6C5CE7),
-                        ),
+                        child: Icon(icon, color: color ?? const Color(0xFF6C5CE7)),
                     ),
                     const SizedBox(height: 8),
                     Text(
                         label,
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: color ?? Colors.grey[700],
-                        ),
+                        style: TextStyle(fontSize: 12, color: color ?? Colors.grey[700]),
                     ),
                 ],
             ),
@@ -851,10 +1045,7 @@ class _MessageBubble extends StatelessWidget {
                             child: message.senderAvatar == null || message.senderAvatar!.isEmpty
                                 ? Text(
                                     (message.senderNickname ?? 'U')[0].toUpperCase(),
-                                    style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Color(0xFF6C5CE7),
-                                    ),
+                                    style: const TextStyle(fontSize: 12, color: Color(0xFF6C5CE7)),
                                 )
                                 : null,
                         ),
@@ -862,14 +1053,9 @@ class _MessageBubble extends StatelessWidget {
                     ],
                     Flexible(
                         child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                             decoration: BoxDecoration(
-                                color: isMe
-                                    ? const Color(0xFF6C5CE7)
-                                    : Colors.grey[200],
+                                color: isMe ? const Color(0xFF6C5CE7) : Colors.grey[200],
                                 borderRadius: BorderRadius.circular(15),
                             ),
                             child: Column(
@@ -878,18 +1064,9 @@ class _MessageBubble extends StatelessWidget {
                                     if (!isMe)
                                         Text(
                                             message.senderNickname ?? 'Unknown',
-                                            style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.grey[600],
-                                            ),
+                                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey[600]),
                                         ),
-                                    Text(
-                                        message.content,
-                                        style: TextStyle(
-                                            color: isMe ? Colors.white : Colors.black,
-                                        ),
-                                    ),
+                                    Text(message.content, style: TextStyle(color: isMe ? Colors.white : Colors.black)),
                                 ],
                             ),
                         ),
@@ -922,11 +1099,7 @@ class _MessageInput extends StatelessWidget {
             decoration: BoxDecoration(
                 color: Colors.white,
                 boxShadow: [
-                    BoxShadow(
-                        color: Colors.grey.withOpacity(0.2),
-                        blurRadius: 5,
-                        offset: const Offset(0, -2),
-                    ),
+                    BoxShadow(color: Colors.grey.withOpacity(0.2), blurRadius: 5, offset: const Offset(0, -2)),
                 ],
             ),
             child: SafeArea(
@@ -942,16 +1115,10 @@ class _MessageInput extends StatelessWidget {
                                 controller: controller,
                                 decoration: InputDecoration(
                                     hintText: 'Type a message...',
-                                    border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(25),
-                                        borderSide: BorderSide.none,
-                                    ),
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(25), borderSide: BorderSide.none),
                                     filled: true,
                                     fillColor: Colors.grey[100],
-                                    contentPadding: const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 8,
-                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                 ),
                             ),
                         ),

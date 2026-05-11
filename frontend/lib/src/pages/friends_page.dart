@@ -3,6 +3,7 @@
  */
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../providers/user_provider.dart';
 import '../providers/friend_provider.dart';
 import '../services/api_service.dart';
@@ -18,16 +19,66 @@ class FriendsPage extends StatefulWidget {
 class _FriendsPageState extends State<FriendsPage> with SingleTickerProviderStateMixin {
     late TabController _tabController;
     final _searchController = TextEditingController();
+    io.Socket? _socket;
 
     @override
     void initState() {
         super.initState();
         _tabController = TabController(length: 3, vsync: this);
         _loadData();
+        _initSocket();
+    }
+
+    void _initSocket() {
+        final api = ApiService();
+        final token = api.token;
+        
+        if (token == null) return;
+
+        _socket = io.io(
+            ApiService.baseHost,
+            io.OptionBuilder()
+                .setTransports(['websocket'])
+                .disableAutoConnect()
+                .setAuth({'token': token})
+                .build(),
+        );
+
+        _socket?.onConnect((_) {
+            debugPrint('Friends: Socket connected');
+        });
+
+        // 监听好友申请通知
+        _socket?.on('friend_request', (data) {
+            debugPrint('Friend request received: $data');
+            if (data != null) {
+                // 刷新待处理申请
+                Provider.of<FriendProvider>(context, listen: false).loadPendingRequests();
+                
+                ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content: Text('${data['requester_nickname'] ?? 'Someone'} sent you a friend request'),
+                        backgroundColor: Colors.green,
+                        action: SnackBarAction(
+                            label: 'View',
+                            textColor: Colors.white,
+                            onPressed: () {
+                                // 切换到 Requests tab
+                                _tabController.animateTo(1);
+                            },
+                        ),
+                    ),
+                );
+            }
+        });
+
+        _socket?.connect();
     }
 
     @override
     void dispose() {
+        _socket?.disconnect();
+        _socket?.dispose();
         _tabController.dispose();
         _searchController.dispose();
         super.dispose();
@@ -217,16 +268,16 @@ class _FriendCard extends StatelessWidget {
                                 Navigator.pop(context);
                                 final confirmed = await showDialog<bool>(
                                     context: context,
-                                    builder: (context) => AlertDialog(
+                                    builder: (ctx) => AlertDialog(
                                         title: const Text('Block User'),
-                                        content: const Text('Are you sure you want to block this user?'),
+                                        content: const Text('Are you sure?'),
                                         actions: [
                                             TextButton(
-                                                onPressed: () => Navigator.pop(context, false),
+                                                onPressed: () => Navigator.pop(ctx, false),
                                                 child: const Text('Cancel'),
                                             ),
                                             ElevatedButton(
-                                                onPressed: () => Navigator.pop(context, true),
+                                                onPressed: () => Navigator.pop(ctx, true),
                                                 style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
                                                 child: const Text('Block', style: TextStyle(color: Colors.white)),
                                             ),
@@ -234,7 +285,7 @@ class _FriendCard extends StatelessWidget {
                                     ),
                                 );
                                 if (confirmed == true) {
-                                    await Provider.of<FriendProvider>(context, listen: false).blockUser(friend.odId);
+                                    onDelete();
                                 }
                             },
                         ),
@@ -243,7 +294,27 @@ class _FriendCard extends StatelessWidget {
                             title: const Text('Remove Friend', style: TextStyle(color: Colors.red)),
                             onTap: () async {
                                 Navigator.pop(context);
-                                onDelete();
+                                final confirmed = await showDialog<bool>(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                        title: const Text('Remove Friend'),
+                                        content: const Text('Are you sure?'),
+                                        actions: [
+                                            TextButton(
+                                                onPressed: () => Navigator.pop(ctx, false),
+                                                child: const Text('Cancel'),
+                                            ),
+                                            ElevatedButton(
+                                                onPressed: () => Navigator.pop(ctx, true),
+                                                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                                                child: const Text('Remove', style: TextStyle(color: Colors.white)),
+                                            ),
+                                        ],
+                                    ),
+                                );
+                                if (confirmed == true) {
+                                    onDelete();
+                                }
                             },
                         ),
                     ],
@@ -258,10 +329,6 @@ class _PendingRequestsList extends StatelessWidget {
     Widget build(BuildContext context) {
         return Consumer<FriendProvider>(
             builder: (context, provider, _) {
-                if (provider.isLoading && provider.pendingRequests.isEmpty) {
-                    return const Center(child: CircularProgressIndicator());
-                }
-
                 if (provider.pendingRequests.isEmpty) {
                     return Center(
                         child: Column(
@@ -285,42 +352,78 @@ class _PendingRequestsList extends StatelessWidget {
                         itemCount: provider.pendingRequests.length,
                         itemBuilder: (context, index) {
                             final request = provider.pendingRequests[index];
-                            return Card(
-                                margin: const EdgeInsets.only(bottom: 12),
-                                child: ListTile(
-                                    leading: CircleAvatar(
-                                        backgroundColor: const Color(0xFF6C5CE7).withOpacity(0.2),
-                                        backgroundImage: request.avatar.isNotEmpty
-                                            ? NetworkImage(request.avatar) as ImageProvider
-                                            : null,
-                                        child: request.avatar.isEmpty
-                                            ? Text(
-                                                (request.nickname.isEmpty ? 'U' : request.nickname[0]).toUpperCase(),
-                                                style: const TextStyle(color: Color(0xFF6C5CE7)),
-                                            )
-                                            : null,
-                                    ),
-                                    title: Text(request.nickname.isEmpty ? request.account : request.nickname),
-                                    subtitle: Text('ID: ${request.account}'),
-                                    trailing: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                            IconButton(
-                                                icon: const Icon(Icons.check, color: Colors.green),
-                                                onPressed: () => provider.acceptRequest(request.id),
-                                            ),
-                                            IconButton(
-                                                icon: const Icon(Icons.close, color: Colors.red),
-                                                onPressed: () => provider.rejectRequest(request.id),
-                                            ),
-                                        ],
-                                    ),
-                                ),
-                            );
+                            return _RequestCard(request: request);
                         },
                     ),
                 );
             },
+        );
+    }
+}
+
+class _RequestCard extends StatelessWidget {
+    final dynamic request;
+
+    const _RequestCard({required this.request});
+
+    @override
+    Widget build(BuildContext context) {
+        return Card(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                    children: [
+                        CircleAvatar(
+                            backgroundColor: const Color(0xFF6C5CE7).withOpacity(0.2),
+                            backgroundImage: request.avatar.isNotEmpty
+                                ? NetworkImage(request.avatar) as ImageProvider
+                                : null,
+                            child: request.avatar.isEmpty
+                                ? Text(
+                                    (request.nickname.isEmpty ? 'U' : request.nickname[0]).toUpperCase(),
+                                    style: const TextStyle(color: Color(0xFF6C5CE7)),
+                                )
+                                : null,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                            child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                    Text(
+                                        request.nickname.isEmpty ? request.account : request.nickname,
+                                        style: const TextStyle(fontWeight: FontWeight.bold),
+                                    ),
+                                    Text(
+                                        'ID: ${request.account}',
+                                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                                    ),
+                                ],
+                            ),
+                        ),
+                        Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                                IconButton(
+                                    icon: const Icon(Icons.close, color: Colors.red),
+                                    onPressed: () {
+                                        Provider.of<FriendProvider>(context, listen: false)
+                                            .rejectRequest(request.odId);
+                                    },
+                                ),
+                                IconButton(
+                                    icon: const Icon(Icons.check, color: Colors.green),
+                                    onPressed: () {
+                                        Provider.of<FriendProvider>(context, listen: false)
+                                            .acceptRequest(request.odId);
+                                    },
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+            ),
         );
     }
 }
@@ -330,10 +433,6 @@ class _BlockedList extends StatelessWidget {
     Widget build(BuildContext context) {
         return Consumer<FriendProvider>(
             builder: (context, provider, _) {
-                if (provider.isLoading && provider.blockedUsers.isEmpty) {
-                    return const Center(child: CircularProgressIndicator());
-                }
-
                 if (provider.blockedUsers.isEmpty) {
                     return Center(
                         child: Column(
@@ -357,29 +456,7 @@ class _BlockedList extends StatelessWidget {
                         itemCount: provider.blockedUsers.length,
                         itemBuilder: (context, index) {
                             final user = provider.blockedUsers[index];
-                            return Card(
-                                margin: const EdgeInsets.only(bottom: 12),
-                                child: ListTile(
-                                    leading: CircleAvatar(
-                                        backgroundColor: Colors.grey[300],
-                                        backgroundImage: user.avatar.isNotEmpty
-                                            ? NetworkImage(user.avatar) as ImageProvider
-                                            : null,
-                                        child: user.avatar.isEmpty
-                                            ? Text(
-                                                (user.nickname.isEmpty ? 'U' : user.nickname[0]).toUpperCase(),
-                                                style: const TextStyle(color: Colors.grey),
-                                            )
-                                            : null,
-                                    ),
-                                    title: Text(user.nickname.isEmpty ? user.account : user.nickname),
-                                    subtitle: const Text('Blocked'),
-                                    trailing: TextButton(
-                                        onPressed: () => provider.unblockUser(user.odId),
-                                        child: const Text('Unblock'),
-                                    ),
-                                ),
-                            );
+                            return _BlockedUserCard(user: user);
                         },
                     ),
                 );
@@ -388,8 +465,43 @@ class _BlockedList extends StatelessWidget {
     }
 }
 
+class _BlockedUserCard extends StatelessWidget {
+    final dynamic user;
+
+    const _BlockedUserCard({required this.user});
+
+    @override
+    Widget build(BuildContext context) {
+        return Card(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: ListTile(
+                leading: CircleAvatar(
+                    backgroundColor: Colors.red.withOpacity(0.2),
+                    backgroundImage: user.avatar.isNotEmpty
+                        ? NetworkImage(user.avatar) as ImageProvider
+                        : null,
+                    child: user.avatar.isEmpty
+                        ? Text(
+                            (user.nickname.isEmpty ? 'U' : user.nickname[0]).toUpperCase(),
+                            style: const TextStyle(color: Colors.red),
+                        )
+                        : null,
+                ),
+                title: Text(user.nickname.isEmpty ? user.account : user.nickname),
+                trailing: TextButton(
+                    onPressed: () {
+                        Provider.of<FriendProvider>(context, listen: false)
+                            .unblockUser(user.odId);
+                    },
+                    child: const Text('Unblock'),
+                ),
+            ),
+        );
+    }
+}
+
 class _UserSearchDialog extends StatefulWidget {
-    final Function(dynamic) onUserSelected;
+    final Function(User) onUserSelected;
 
     const _UserSearchDialog({required this.onUserSelected});
 
@@ -399,13 +511,18 @@ class _UserSearchDialog extends StatefulWidget {
 
 class _UserSearchDialogState extends State<_UserSearchDialog> {
     final _accountController = TextEditingController();
-    User? _searchedUser;
     bool _isLoading = false;
     String? _error;
+    User? _searchedUser;
 
     Future<void> _search() async {
         final account = _accountController.text.trim();
-        if (account.isEmpty) return;
+        if (account.isEmpty) {
+            setState(() {
+                _error = 'Please enter an account';
+            });
+            return;
+        }
 
         setState(() {
             _isLoading = true;
@@ -414,10 +531,9 @@ class _UserSearchDialogState extends State<_UserSearchDialog> {
         });
 
         try {
-            final api = ApiService();
-            final result = await api.searchUserByAccount(account);
+            final user = await ApiService().searchUserByAccount(account);
             setState(() {
-                _searchedUser = result;
+                _searchedUser = user;
                 _isLoading = false;
             });
         } catch (e) {
@@ -426,6 +542,12 @@ class _UserSearchDialogState extends State<_UserSearchDialog> {
                 _isLoading = false;
             });
         }
+    }
+
+    @override
+    void dispose() {
+        _accountController.dispose();
+        super.dispose();
     }
 
     @override
@@ -454,7 +576,7 @@ class _UserSearchDialogState extends State<_UserSearchDialog> {
                             user: _searchedUser!,
                             onTap: () {
                                 Navigator.pop(context);
-                                widget.onUserSelected(_searchedUser);
+                                widget.onUserSelected(_searchedUser!);
                             },
                         ),
                 ],

@@ -3,8 +3,10 @@
  */
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../providers/room_provider.dart';
 import '../models/room.dart';
+import '../services/api_service.dart';
 import 'room_page.dart';
 
 class RoomListPage extends StatefulWidget {
@@ -17,9 +19,69 @@ class RoomListPage extends StatefulWidget {
 class _RoomListPageState extends State<RoomListPage> {
     final _searchController = TextEditingController();
     String _sortBy = 'created';
+    io.Socket? _socket;
+
+    @override
+    void initState() {
+        super.initState();
+        _initSocket();
+    }
+
+    void _initSocket() {
+        final api = ApiService();
+        final token = api.token;
+        
+        if (token == null) return;
+
+        _socket = io.io(
+            ApiService.baseHost,
+            io.OptionBuilder()
+                .setTransports(['websocket'])
+                .disableAutoConnect()
+                .setAuth({'token': token})
+                .build(),
+        );
+
+        _socket?.onConnect((_) {
+            debugPrint('RoomList: Socket connected');
+        });
+
+        // 监听新房间创建
+        _socket?.on('new_room', (data) {
+            debugPrint('New room created: $data');
+            if (data != null) {
+                final newRoom = Room.fromJson(data);
+                // 添加到房间列表
+                final provider = Provider.of<RoomProvider>(context, listen: false);
+                if (!mounted) return;
+                // 检查是否已存在
+                final exists = provider.rooms.any((r) => r.id == newRoom.id);
+                if (!exists) {
+                    setState(() {
+                        provider.rooms.insert(0, newRoom);
+                    });
+                }
+            }
+        });
+
+        // 监听房间删除
+        _socket?.on('room_deleted', (data) {
+            debugPrint('Room deleted: $data');
+            if (data != null && data['room_id'] != null) {
+                final provider = Provider.of<RoomProvider>(context, listen: false);
+                setState(() {
+                    provider.rooms.removeWhere((r) => r.id == data['room_id']);
+                });
+            }
+        });
+
+        _socket?.connect();
+    }
 
     @override
     void dispose() {
+        _socket?.disconnect();
+        _socket?.dispose();
         _searchController.dispose();
         super.dispose();
     }
