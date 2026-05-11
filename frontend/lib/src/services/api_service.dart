@@ -11,6 +11,7 @@ import '../models/user.dart';
 import '../models/room.dart';
 import '../models/gift.dart';
 import '../models/message.dart';
+import '../models/friend.dart';
 
 class ApiService {
     static const String baseUrl = 'https://hiu-backend-production.up.railway.app/api';
@@ -358,15 +359,6 @@ class ApiService {
 
     Future<void> acceptVideoCall(String callId) async => await _request('PUT', '/video/call/$callId/accept');
     Future<void> rejectVideoCall(String callId) async => await _request('PUT', '/video/call/$callId/reject');
-    Future<void> endVideoCall(String callId, int duration) async => await _request('PUT', '/video/call/$callId/end', body: {'duration': duration});
-}
-
-class ApiException implements Exception {
-    final String message;
-    ApiException(this.message);
-    @override
-    String toString() => message;
-}
 
     // ============ 好友模块 ============
 
@@ -422,3 +414,11 @@ class ApiException implements Exception {
         final result = await _request('GET', '/users/search', queryParams: {'account': account});
         return User.fromJson(result['data']);
     }
+}
+
+class ApiException implements Exception {
+    final String message;
+    ApiException(this.message);
+    @override
+    String toString() => message;
+}
