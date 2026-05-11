@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'src/providers/user_provider.dart';
 import 'src/providers/room_provider.dart';
 import 'src/providers/chat_provider.dart';
+import 'src/providers/friend_provider.dart';
 import 'src/pages/splash_page.dart';
 
 void main() {
@@ -22,6 +23,7 @@ class HIUApp extends StatelessWidget {
                 ChangeNotifierProvider(create: (_) => UserProvider()),
                 ChangeNotifierProvider(create: (_) => RoomProvider()),
                 ChangeNotifierProvider(create: (_) => ChatProvider()),
+                ChangeNotifierProvider(create: (_) => FriendProvider()),
             ],
             child: MaterialApp(
                 title: 'HIU',

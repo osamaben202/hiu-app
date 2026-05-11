@@ -183,11 +183,12 @@ class ApiService {
         return User.fromJson(result['data']);
     }
 
-    Future<User> updateProfile({String? nickname, String? avatar, String? signature}) async {
+    Future<User> updateProfile({String? nickname, String? avatar, String? signature, String? gender}) async {
         final body = <String, dynamic>{};
         if (nickname != null) body['nickname'] = nickname;
         if (avatar != null) body['avatar'] = avatar;
         if (signature != null) body['signature'] = signature;
+        if (gender != null) body['gender'] = gender;
         final result = await _request('PUT', '/users/profile', body: body);
         return User.fromJson(result['data']);
     }
@@ -366,3 +367,58 @@ class ApiException implements Exception {
     @override
     String toString() => message;
 }
+
+    // ============ 好友模块 ============
+
+    Future<List<Friend>> getFriends() async {
+        final result = await _request('GET', '/friends');
+        final list = result['data'] as List;
+        return list.map((e) => Friend.fromJson(e)).toList();
+    }
+
+    Future<List<Friend>> getPendingFriendRequests() async {
+        final result = await _request('GET', '/friends', queryParams: {'status': 'pending'});
+        final list = result['data'] as List;
+        return list.map((e) => Friend.fromJson(e)).toList();
+    }
+
+    Future<List<Friend>> getSentFriendRequests() async {
+        final result = await _request('GET', '/friends/sent');
+        final list = result['data'] as List;
+        return list.map((e) => Friend.fromJson(e)).toList();
+    }
+
+    Future<void> sendFriendRequest(String userId) async {
+        await _request('POST', '/friends/request', body: {'user_id': userId});
+    }
+
+    Future<void> acceptFriendRequest(String requestId) async {
+        await _request('POST', '/friends/accept/$requestId');
+    }
+
+    Future<void> rejectFriendRequest(String requestId) async {
+        await _request('POST', '/friends/reject/$requestId');
+    }
+
+    Future<void> blockUser(String userId) async {
+        await _request('POST', '/friends/block/$userId');
+    }
+
+    Future<void> unblockUser(String userId) async {
+        await _request('POST', '/friends/unblock/$userId');
+    }
+
+    Future<void> deleteFriend(String friendId) async {
+        await _request('DELETE', '/friends/$friendId');
+    }
+
+    Future<List<Friend>> getBlockedUsers() async {
+        final result = await _request('GET', '/friends/blocked');
+        final list = result['data'] as List;
+        return list.map((e) => Friend.fromJson(e)).toList();
+    }
+
+    Future<User> searchUserByAccount(String account) async {
+        final result = await _request('GET', '/users/search', queryParams: {'account': account});
+        return User.fromJson(result['data']);
+    }

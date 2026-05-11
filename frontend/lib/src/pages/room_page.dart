@@ -3,10 +3,14 @@
  */
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../providers/user_provider.dart';
 import '../providers/room_provider.dart';
+import '../providers/friend_provider.dart';
 import '../models/room.dart';
 import '../models/gift.dart';
+import '../models/user.dart';
+import '../services/api_service.dart';
 import 'gift_panel.dart';
 
 class RoomPage extends StatefulWidget {
@@ -22,11 +26,15 @@ class _RoomPageState extends State<RoomPage> {
     final _messageController = TextEditingController();
     final _scrollController = ScrollController();
     final List<ChatMessage> _messages = [];
+    
+    io.Socket? _socket;
+    bool _isConnected = false;
 
     @override
     void initState() {
         super.initState();
         _loadRoom();
+        _initSocket();
     }
 
     Future<void> _loadRoom() async {
@@ -34,8 +42,92 @@ class _RoomPageState extends State<RoomPage> {
         await Provider.of<RoomProvider>(context, listen: false).fetchGifts();
     }
 
+    void _initSocket() {
+        final api = ApiService();
+        final token = api.token;
+        
+        if (token == null) {
+            debugPrint('No token available for socket connection');
+            return;
+        }
+
+        _socket = io.io(
+            ApiService.baseHost,
+            io.OptionBuilder()
+                .setTransports(['websocket'])
+                .disableAutoConnect()
+                .setAuth({'token': token})
+                .build(),
+        );
+
+        _socket?.onConnect((_) {
+            debugPrint('Socket connected');
+            setState(() => _isConnected = true);
+            // 加入房间
+            _socket?.emit('join_room', {'room_id': widget.roomId});
+        });
+
+        _socket?.onDisconnect((_) {
+            debugPrint('Socket disconnected');
+            setState(() => _isConnected = false);
+        });
+
+        _socket?.onError((error) {
+            debugPrint('Socket error: $error');
+        });
+
+        // 监听聊天消息
+        _socket?.on('chat_message', (data) {
+            debugPrint('Received chat message: $data');
+            if (data != null) {
+                final message = ChatMessage(
+                    id: data['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
+                    roomId: data['room_id']?.toString(),
+                    senderId: data['sender_id']?.toString() ?? '',
+                    senderNickname: data['sender_nickname']?.toString(),
+                    senderAvatar: data['sender_avatar']?.toString(),
+                    type: data['type']?.toString() ?? 'text',
+                    content: data['content']?.toString() ?? '',
+                    createdAt: data['created_at'] != null
+                        ? DateTime.tryParse(data['created_at'].toString()) ?? DateTime.now()
+                        : DateTime.now(),
+                );
+                setState(() {
+                    _messages.add(message);
+                });
+                // 滚动到底部
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (_scrollController.hasClients) {
+                        _scrollController.animateTo(
+                            _scrollController.position.maxScrollExtent,
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeOut,
+                        );
+                    }
+                });
+            }
+        });
+
+        // 监听错误消息
+        _socket?.on('error', (data) {
+            debugPrint('Socket error event: $data');
+            if (data != null && data['message'] != null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(data['message'].toString()), backgroundColor: Colors.red),
+                );
+            }
+        });
+
+        // 连接
+        _socket?.connect();
+    }
+
     @override
     void dispose() {
+        // 离开房间并断开连接
+        _socket?.emit('leave_room', {'room_id': widget.roomId});
+        _socket?.disconnect();
+        _socket?.dispose();
         _messageController.dispose();
         _scrollController.dispose();
         super.dispose();
@@ -64,11 +156,32 @@ class _RoomPageState extends State<RoomPage> {
         );
 
         if (confirmed == true && mounted) {
+            // 离开房间
+            _socket?.emit('leave_room', {'room_id': widget.roomId});
             await Provider.of<RoomProvider>(context, listen: false).leaveRoom(widget.roomId);
             if (mounted) {
                 Navigator.of(context).pop();
             }
         }
+    }
+
+    void _sendMessage() {
+        if (_messageController.text.isEmpty) return;
+        if (_socket == null || !_isConnected) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Not connected to chat'), backgroundColor: Colors.orange),
+            );
+            return;
+        }
+        
+        // 通过 Socket 发送消息
+        _socket?.emit('chat_message', {
+            'room_id': widget.roomId,
+            'content': _messageController.text.trim(),
+            'type': 'text',
+        });
+        
+        _messageController.clear();
     }
 
     void _showGiftPanel() {
@@ -98,6 +211,37 @@ class _RoomPageState extends State<RoomPage> {
         );
     }
 
+    void _showUserProfileCard(RoomSeat seat) async {
+        if (seat.userId == null) return;
+        
+        try {
+            final api = ApiService();
+            final userInfo = await api.getUserInfo(seat.userId!);
+            
+            if (!mounted) return;
+            
+            showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (context) => _SeatUserProfileCard(
+                    user: userInfo,
+                    seat: seat,
+                ),
+            );
+        } catch (e) {
+            if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to load user info: $e'), backgroundColor: Colors.red),
+                );
+            }
+        }
+    }
+
+    void _showRoomSettings() {
+        // TODO: 显示房间设置
+    }
+
     @override
     Widget build(BuildContext context) {
         final user = Provider.of<UserProvider>(context, listen: false).currentUser;
@@ -124,12 +268,25 @@ class _RoomPageState extends State<RoomPage> {
                             room.name,
                             style: const TextStyle(fontSize: 16),
                         ),
-                        Text(
-                            '${room.onlineCount} online',
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.white.withOpacity(0.7),
-                            ),
+                        Row(
+                            children: [
+                                Text(
+                                    '${room.onlineCount} online',
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.white.withOpacity(0.7),
+                                    ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: _isConnected ? Colors.green : Colors.red,
+                                    ),
+                                ),
+                            ],
                         ),
                     ],
                 ),
@@ -154,6 +311,7 @@ class _RoomPageState extends State<RoomPage> {
                             seats: room.seats,
                             isOwner: isOwner,
                             roomId: widget.roomId,
+                            onUserTap: _showUserProfileCard,
                         ),
                     ),
 
@@ -191,17 +349,6 @@ class _RoomPageState extends State<RoomPage> {
             ),
         );
     }
-
-    void _sendMessage() {
-        if (_messageController.text.isEmpty) return;
-        
-        // TODO: 通过Socket发送消息
-        _messageController.clear();
-    }
-
-    void _showRoomSettings() {
-        // TODO: 显示房间设置
-    }
 }
 
 /**
@@ -211,11 +358,13 @@ class _SeatsArea extends StatelessWidget {
     final List<RoomSeat> seats;
     final bool isOwner;
     final String roomId;
+    final Function(RoomSeat) onUserTap;
 
     const _SeatsArea({
         required this.seats,
         required this.isOwner,
         required this.roomId,
+        required this.onUserTap,
     });
 
     @override
@@ -237,6 +386,7 @@ class _SeatsArea extends StatelessWidget {
                         seat: seat,
                         isOwner: isOwner,
                         roomId: roomId,
+                        onUserTap: onUserTap,
                     );
                 },
             ),
@@ -245,19 +395,21 @@ class _SeatsArea extends StatelessWidget {
 }
 
 /**
- * 麦位项
+ * 麦位单项
  */
 class _SeatItem extends StatelessWidget {
     final int seatIndex;
     final RoomSeat? seat;
     final bool isOwner;
     final String roomId;
+    final Function(RoomSeat) onUserTap;
 
     const _SeatItem({
         required this.seatIndex,
         this.seat,
         required this.isOwner,
         required this.roomId,
+        required this.onUserTap,
     });
 
     @override
@@ -265,48 +417,41 @@ class _SeatItem extends StatelessWidget {
         final isOccupied = seat?.isOccupied ?? false;
         final isMuted = seat?.isMuted ?? true;
         final isLocked = seat?.isLocked ?? false;
-        final isSpeaking = seat?.isSpeaking ?? false;
 
         return GestureDetector(
             onTap: () => _handleTap(context),
+            onLongPress: isOccupied ? () => onUserTap(seat!) : null,
             child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                    // 头像
                     Stack(
+                        alignment: Alignment.center,
                         children: [
+                            // 头像
                             Container(
                                 width: 55,
                                 height: 55,
                                 decoration: BoxDecoration(
                                     shape: BoxShape.circle,
+                                    border: Border.all(
+                                        color: isOccupied
+                                            ? const Color(0xFF6C5CE7)
+                                            : Colors.grey.withOpacity(0.3),
+                                        width: 2,
+                                    ),
                                     color: isOccupied
                                         ? const Color(0xFF6C5CE7).withOpacity(0.2)
-                                        : Colors.grey.withOpacity(0.2),
-                                    border: Border.all(
-                                        color: isSpeaking
-                                            ? Colors.green
-                                            : (isOccupied
-                                                ? const Color(0xFF6C5CE7)
-                                                : Colors.grey),
-                                        width: isSpeaking ? 3 : 2,
-                                    ),
+                                        : Colors.grey.withOpacity(0.1),
                                 ),
-                                child: isOccupied
-                                    ? Center(
-                                        child: Text(
-                                            (seat?.nickname ?? 'U')[0].toUpperCase(),
-                                            style: const TextStyle(
-                                                fontSize: 24,
-                                                fontWeight: FontWeight.bold,
-                                                color: Color(0xFF6C5CE7),
-                                            ),
+                                child: seat?.avatar != null && seat!.avatar!.isNotEmpty
+                                    ? ClipOval(
+                                        child: Image.network(
+                                            seat!.avatar!,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) => _buildDefaultAvatar(),
                                         ),
                                     )
-                                    : Icon(
-                                        Icons.add,
-                                        color: Colors.grey[400],
-                                    ),
+                                    : _buildDefaultAvatar(),
                             ),
                             // 闭麦标记
                             if (isOccupied && isMuted)
@@ -364,6 +509,24 @@ class _SeatItem extends StatelessWidget {
         );
     }
 
+    Widget _buildDefaultAvatar() {
+        return Center(
+            child: isOccupied
+                ? Text(
+                    (seat?.nickname ?? 'U')[0].toUpperCase(),
+                    style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF6C5CE7),
+                    ),
+                )
+                : Icon(
+                    Icons.add,
+                    color: Colors.grey[400],
+                ),
+        );
+    }
+
     void _handleTap(BuildContext context) {
         final user = Provider.of<UserProvider>(context, listen: false).currentUser;
         
@@ -382,6 +545,9 @@ class _SeatItem extends StatelessWidget {
             } else if (isOwner) {
                 // 房主踢人
                 _showKickDialog(context);
+            } else {
+                // 长按显示资料卡
+                onUserTap(seat!);
             }
         } else {
             // 空麦位，上麦
@@ -408,6 +574,210 @@ class _SeatItem extends StatelessWidget {
                         },
                         style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
                         child: const Text('Kick', style: TextStyle(color: Colors.white)),
+                    ),
+                ],
+            ),
+        );
+    }
+}
+
+/**
+ * 座位用户资料卡
+ */
+class _SeatUserProfileCard extends StatelessWidget {
+    final User user;
+    final RoomSeat seat;
+
+    const _SeatUserProfileCard({
+        required this.user,
+        required this.seat,
+    });
+
+    @override
+    Widget build(BuildContext context) {
+        final currentUser = Provider.of<UserProvider>(context, listen: false).currentUser;
+        final isSelf = user.id == currentUser?.id;
+
+        return Container(
+            decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: SafeArea(
+                child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                        const SizedBox(height: 20),
+                        // 头像
+                        CircleAvatar(
+                            radius: 50,
+                            backgroundColor: const Color(0xFF6C5CE7).withOpacity(0.2),
+                            backgroundImage: user.avatar.isNotEmpty
+                                ? NetworkImage(user.avatar) as ImageProvider
+                                : null,
+                            child: user.avatar.isEmpty
+                                ? Text(
+                                    (user.nickname.isEmpty ? 'U' : user.nickname[0]).toUpperCase(),
+                                    style: const TextStyle(
+                                        fontSize: 36,
+                                        color: Color(0xFF6C5CE7),
+                                    ),
+                                )
+                                : null,
+                        ),
+                        const SizedBox(height: 16),
+                        // 昵称
+                        Text(
+                            user.nickname.isEmpty ? user.account : user.nickname,
+                            style: const TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                            ),
+                        ),
+                        const SizedBox(height: 8),
+                        // ID
+                        Text(
+                            'ID: ${user.account}',
+                            style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                            ),
+                        ),
+                        const SizedBox(height: 8),
+                        // 签名
+                        if (user.signature.isNotEmpty)
+                            Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 32),
+                                child: Text(
+                                    user.signature,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey[500],
+                                    ),
+                                ),
+                            ),
+                        const SizedBox(height: 24),
+                        // 操作按钮
+                        if (!isSelf)
+                            Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 32),
+                                child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                    children: [
+                                        _ActionButton(
+                                            icon: Icons.person_add,
+                                            label: 'Add Friend',
+                                            onTap: () async {
+                                                final provider = Provider.of<FriendProvider>(context, listen: false);
+                                                await provider.sendFriendRequest(user.id);
+                                                if (context.mounted) {
+                                                    Navigator.pop(context);
+                                                    ScaffoldMessenger.of(context).showSnackBar(
+                                                        const SnackBar(content: Text('Friend request sent')),
+                                                    );
+                                                }
+                                            },
+                                        ),
+                                        _ActionButton(
+                                            icon: Icons.card_giftcard,
+                                            label: 'Send Gift',
+                                            onTap: () {
+                                                Navigator.pop(context);
+                                                showModalBottomSheet(
+                                                    context: context,
+                                                    isScrollControlled: true,
+                                                    backgroundColor: Colors.transparent,
+                                                    builder: (ctx) => GiftPanel(
+                                                        receivers: [{
+                                                            'id': user.id,
+                                                            'nickname': user.nickname.isEmpty ? user.account : user.nickname,
+                                                            'avatar': user.avatar,
+                                                        }],
+                                                    ),
+                                                );
+                                            },
+                                        ),
+                                        _ActionButton(
+                                            icon: Icons.block,
+                                            label: 'Block',
+                                            color: Colors.red,
+                                            onTap: () async {
+                                                final confirmed = await showDialog<bool>(
+                                                    context: context,
+                                                    builder: (ctx) => AlertDialog(
+                                                        title: const Text('Block User'),
+                                                        content: const Text('Are you sure?'),
+                                                        actions: [
+                                                            TextButton(
+                                                                onPressed: () => Navigator.pop(ctx, false),
+                                                                child: const Text('Cancel'),
+                                                            ),
+                                                            ElevatedButton(
+                                                                onPressed: () => Navigator.pop(ctx, true),
+                                                                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                                                                child: const Text('Block', style: TextStyle(color: Colors.white)),
+                                                            ),
+                                                        ],
+                                                    ),
+                                                );
+                                                if (confirmed == true) {
+                                                    await Provider.of<FriendProvider>(context, listen: false).blockUser(user.id);
+                                                    if (context.mounted) {
+                                                        Navigator.pop(context);
+                                                    }
+                                                }
+                                            },
+                                        ),
+                                    ],
+                                ),
+                            ),
+                        const SizedBox(height: 32),
+                    ],
+                ),
+            ),
+        );
+    }
+}
+
+class _ActionButton extends StatelessWidget {
+    final IconData icon;
+    final String label;
+    final VoidCallback onTap;
+    final Color? color;
+
+    const _ActionButton({
+        required this.icon,
+        required this.label,
+        required this.onTap,
+        this.color,
+    });
+
+    @override
+    Widget build(BuildContext context) {
+        return GestureDetector(
+            onTap: onTap,
+            child: Column(
+                children: [
+                    Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                            color: (color ?? const Color(0xFF6C5CE7)).withOpacity(0.1),
+                            shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                            icon,
+                            color: color ?? const Color(0xFF6C5CE7),
+                        ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                        label,
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: color ?? Colors.grey[700],
+                        ),
                     ),
                 ],
             ),
@@ -473,13 +843,18 @@ class _MessageBubble extends StatelessWidget {
                         CircleAvatar(
                             radius: 15,
                             backgroundColor: const Color(0xFF6C5CE7).withOpacity(0.2),
-                            child: Text(
-                                (message.senderNickname ?? 'U')[0].toUpperCase(),
-                                style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Color(0xFF6C5CE7),
-                                ),
-                            ),
+                            backgroundImage: message.senderAvatar != null && message.senderAvatar!.isNotEmpty
+                                ? NetworkImage(message.senderAvatar!) as ImageProvider
+                                : null,
+                            child: message.senderAvatar == null || message.senderAvatar!.isEmpty
+                                ? Text(
+                                    (message.senderNickname ?? 'U')[0].toUpperCase(),
+                                    style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Color(0xFF6C5CE7),
+                                    ),
+                                )
+                                : null,
                         ),
                         const SizedBox(width: 8),
                     ],

@@ -20,6 +20,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
     final _signatureController = TextEditingController();
     bool _isLoading = false;
     String? _avatarUrl;
+    String _selectedGender = 'unknown';
 
     @override
     void initState() {
@@ -28,6 +29,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         _nicknameController.text = user?.nickname ?? '';
         _signatureController.text = user?.signature ?? '';
         _avatarUrl = user?.avatar ?? '';
+        _selectedGender = user?.gender ?? 'unknown';
     }
 
     @override
@@ -86,6 +88,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
             .updateProfile(
                 nickname: _nicknameController.text,
                 signature: _signatureController.text,
+                gender: _selectedGender,
             );
 
         setState(() => _isLoading = false);
@@ -202,6 +205,102 @@ class _EditProfilePageState extends State<EditProfilePage> {
                                 border: OutlineInputBorder(),
                                 prefixIcon: Icon(Icons.edit_note),
                                 alignLabelWithHint: true,
+                            ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // 性别选择
+                        Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey[400]!),
+                                borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                    const Text(
+                                        'Gender',
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey,
+                                        ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                        children: [
+                                            _GenderOption(
+                                                label: 'Male',
+                                                icon: Icons.male,
+                                                isSelected: _selectedGender == 'male',
+                                                onTap: () => setState(() => _selectedGender = 'male'),
+                                            ),
+                                            const SizedBox(width: 16),
+                                            _GenderOption(
+                                                label: 'Female',
+                                                icon: Icons.female,
+                                                isSelected: _selectedGender == 'female',
+                                                onTap: () => setState(() => _selectedGender = 'female'),
+                                            ),
+                                            const SizedBox(width: 16),
+                                            _GenderOption(
+                                                label: 'Secret',
+                                                icon: Icons.question_mark,
+                                                isSelected: _selectedGender == 'unknown',
+                                                onTap: () => setState(() => _selectedGender = 'unknown'),
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                            ),
+                        ),
+                    ],
+                ),
+            ),
+        );
+    }
+}
+
+class _GenderOption extends StatelessWidget {
+    final String label;
+    final IconData icon;
+    final bool isSelected;
+    final VoidCallback onTap;
+
+    const _GenderOption({
+        required this.label,
+        required this.icon,
+        required this.isSelected,
+        required this.onTap,
+    });
+
+    @override
+    Widget build(BuildContext context) {
+        return GestureDetector(
+            onTap: onTap,
+            child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                    color: isSelected ? const Color(0xFF6C5CE7) : Colors.grey[100],
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                        color: isSelected ? const Color(0xFF6C5CE7) : Colors.grey[300]!,
+                    ),
+                ),
+                child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                        Icon(
+                            icon,
+                            size: 18,
+                            color: isSelected ? Colors.white : Colors.grey[600],
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                            label,
+                            style: TextStyle(
+                                color: isSelected ? Colors.white : Colors.grey[600],
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                             ),
                         ),
                     ],
