@@ -404,6 +404,8 @@ class _SeatItem extends StatelessWidget {
     final String roomId;
     final Function(RoomSeat) onUserTap;
 
+    bool get isOccupied => seat?.isOccupied ?? false;
+
     const _SeatItem({
         required this.seatIndex,
         this.seat,
@@ -414,7 +416,7 @@ class _SeatItem extends StatelessWidget {
 
     @override
     Widget build(BuildContext context) {
-        final isOccupied = seat?.isOccupied ?? false;
+
         final isMuted = seat?.isMuted ?? true;
         final isLocked = seat?.isLocked ?? false;
 

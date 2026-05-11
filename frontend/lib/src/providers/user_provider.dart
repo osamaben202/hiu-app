@@ -108,6 +108,33 @@ class UserProvider extends ChangeNotifier {
         }
     }
 
+    /// 更新定价
+    Future<bool> updatePricing({
+        double? textPrice,
+        double? imagePrice,
+        double? videoPrice,
+    }) async {
+        try {
+            await _api.updatePricing(
+                textPrice: textPrice,
+                imagePrice: imagePrice,
+                videoPrice: videoPrice,
+            );
+            return true;
+        } catch (e) {
+            _error = e.toString();
+            return false;
+        }
+    }
+
+    /// 更新金币余额
+    void updateCoinBalance(double newBalance) {
+        if (_currentUser != null) {
+            _currentUser = _currentUser!.copyWith(coinBalance: newBalance);
+            notifyListeners();
+        }
+    }
+
     /// 登出
     Future<void> logout() async {
         await _api.clearToken();
