@@ -416,7 +416,23 @@ class ApiService {
 
     Future<User> searchUserByAccount(String account) async {
         final result = await _request('GET', '/users/search', queryParams: {'account': account});
-        return User.fromJson(result['data']);
+        final data = result['data'];
+        // 后端返回列表，取第一个
+        if (data is List && data.isNotEmpty) {
+            return User.fromJson(data[0]);
+        } else if (data is Map) {
+            return User.fromJson(data);
+        }
+        throw ApiException('用户不存在');
+    }
+
+    Future<List<User>> searchUsers(String keyword) async {
+        final result = await _request('GET', '/users/search', queryParams: {'keyword': keyword});
+        final data = result['data'];
+        if (data is List) {
+            return data.map((e) => User.fromJson(e)).toList();
+        }
+        return [];
     }
 }
 
