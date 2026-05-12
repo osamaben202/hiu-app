@@ -409,14 +409,14 @@ class _RequestCard extends StatelessWidget {
                                     icon: const Icon(Icons.close, color: Colors.red),
                                     onPressed: () {
                                         Provider.of<FriendProvider>(context, listen: false)
-                                            .rejectRequest(request.odId);
+                                            .rejectRequest(request.id);
                                     },
                                 ),
                                 IconButton(
                                     icon: const Icon(Icons.check, color: Colors.green),
                                     onPressed: () {
                                         Provider.of<FriendProvider>(context, listen: false)
-                                            .acceptRequest(request.odId);
+                                            .acceptRequest(request.id);
                                     },
                                 ),
                             ],

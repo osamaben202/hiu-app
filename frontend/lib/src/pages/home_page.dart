@@ -8,6 +8,7 @@ import '../providers/room_provider.dart';
 import '../providers/chat_provider.dart';
 import 'login_page.dart';
 import 'room_list_page.dart';
+import 'friends_page.dart';
 import 'profile_page.dart';
 import 'chat_list_page.dart';
 import 'create_room_page.dart';
@@ -25,6 +26,7 @@ class _HomePageState extends State<HomePage> {
     final List<Widget> _pages = [
         const RoomListPage(),
         const ChatListPage(),
+        const FriendsPage(),
         const ProfilePage(),
     ];
 
@@ -74,6 +76,10 @@ class _HomePageState extends State<HomePage> {
                             },
                         ),
                         label: 'Chat',
+                    ),
+                    const BottomNavigationBarItem(
+                        icon: Icon(Icons.people),
+                        label: 'Friends',
                     ),
                     const BottomNavigationBarItem(
                         icon: Icon(Icons.person),
