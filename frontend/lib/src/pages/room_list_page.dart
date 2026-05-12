@@ -25,6 +25,8 @@ class _RoomListPageState extends State<RoomListPage> {
     void initState() {
         super.initState();
         _initSocket();
+        // Load initial room list
+        Provider.of<RoomProvider>(context, listen: false).fetchRooms();
     }
 
     void _initSocket() {
