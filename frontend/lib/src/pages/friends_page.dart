@@ -491,7 +491,7 @@ class _BlockedUserCard extends StatelessWidget {
                 trailing: TextButton(
                     onPressed: () {
                         Provider.of<FriendProvider>(context, listen: false)
-                            .unblockUser(user.odId);
+                            .unblockUser(user.id);
                     },
                     child: const Text('Unblock'),
                 ),
@@ -634,7 +634,8 @@ class _UserProfileCard extends StatelessWidget {
     @override
     Widget build(BuildContext context) {
         final currentUser = Provider.of<UserProvider>(context, listen: false).currentUser;
-        final isSelf = user.odId == currentUser?.id;
+        final odId = user.id;
+        final isSelf = odId == currentUser?.id;
 
         return Container(
             decoration: const BoxDecoration(
@@ -708,7 +709,7 @@ class _UserProfileCard extends StatelessWidget {
                                             label: 'Add Friend',
                                             onTap: () async {
                                                 final provider = Provider.of<FriendProvider>(context, listen: false);
-                                                await provider.sendFriendRequest(user.odId);
+                                                await provider.sendFriendRequest(user.id);
                                                 if (context.mounted) {
                                                     Navigator.pop(context);
                                                     ScaffoldMessenger.of(context).showSnackBar(
@@ -749,7 +750,7 @@ class _UserProfileCard extends StatelessWidget {
                                                     ),
                                                 );
                                                 if (confirmed == true) {
-                                                    await Provider.of<FriendProvider>(context, listen: false).blockUser(user.odId);
+                                                    await Provider.of<FriendProvider>(context, listen: false).blockUser(user.id);
                                                     if (context.mounted) {
                                                         Navigator.pop(context);
                                                     }
