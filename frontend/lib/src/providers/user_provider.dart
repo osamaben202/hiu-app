@@ -91,6 +91,9 @@ class UserProvider extends ChangeNotifier {
             _localAccount = prefs.getString('local_account');
             _password = prefs.getString('local_password');
             
+            // 确保token被加载到ApiService中
+            await _api.loadToken();
+            
             // 尝试用 token 获取用户信息
             _currentUser = await _api.getCurrentUser();
             if (_currentUser != null) {
