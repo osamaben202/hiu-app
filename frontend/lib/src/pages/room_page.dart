@@ -64,7 +64,7 @@ class _RoomPageState extends State<RoomPage> {
         _socket = io.io(
             ApiService.baseHost,
             io.OptionBuilder()
-                .setTransports(['websocket'])
+                
                 .disableAutoConnect()
                 .setAuth({'token': token})
                 .setTimeout(10000)

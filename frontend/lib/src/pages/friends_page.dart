@@ -38,7 +38,7 @@ class _FriendsPageState extends State<FriendsPage> with SingleTickerProviderStat
         _socket = io.io(
             ApiService.baseHost,
             io.OptionBuilder()
-                .setTransports(['websocket'])
+                
                 .disableAutoConnect()
                 .setAuth({'token': token})
                 .build(),
