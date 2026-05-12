@@ -191,7 +191,7 @@ class _RoomPageState extends State<RoomPage> {
             debugPrint('Seat rejected: $data');
             if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Your seat request was rejected', backgroundColor: Colors.orange)),
+                    const SnackBar(content: Text('Your seat request was rejected'), backgroundColor: Colors.orange),
                 );
             }
         });

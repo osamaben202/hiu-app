@@ -278,7 +278,7 @@ class ApiService {
 
     /// 转移房主
     Future<void> transferRoomOwner(String roomId, String newOwnerId) async =>
-        await _request(POST, /rooms//transfer-owner, body: {new_owner_id: newOwnerId});
+        await _request('POST', '/rooms/$roomId/transfer-owner', body: {'new_owner_id': newOwnerId});
 
     // ============ 礼物模块 ============
 
@@ -419,8 +419,8 @@ class ApiService {
         final data = result['data'];
         // 后端返回列表，取第一个
         if (data is List && data.isNotEmpty) {
-            return User.fromJson(data[0]);
-        } else if (data is Map) {
+            return User.fromJson(data[0] as Map<String, dynamic>);
+        } else if (data is Map<String, dynamic>) {
             return User.fromJson(data);
         }
         throw ApiException('用户不存在');
@@ -430,7 +430,7 @@ class ApiService {
         final result = await _request('GET', '/users/search', queryParams: {'keyword': keyword});
         final data = result['data'];
         if (data is List) {
-            return data.map((e) => User.fromJson(e)).toList();
+            return data.map((e) => User.fromJson(e as Map<String, dynamic>)).toList();
         }
         return [];
     }
