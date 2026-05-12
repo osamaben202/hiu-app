@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/user_provider.dart';
 import 'login_page.dart';
 import 'edit_profile_page.dart';
@@ -379,6 +380,24 @@ class _SettingsSection extends StatelessWidget {
                                     },
                                 ),
 
+                            // 账号信息
+                            _SettingsItem(
+                                icon: Icons.badge,
+                                iconColor: Colors.purple,
+                                title: 'Account Info',
+                                subtitle: 'View your account and password',
+                                onTap: () => _showAccountInfoDialog(context),
+                            ),
+
+                            // 修改密码
+                            _SettingsItem(
+                                icon: Icons.lock,
+                                iconColor: Colors.orange,
+                                title: 'Change Password',
+                                subtitle: 'Update your login password',
+                                onTap: () => _showChangePasswordDialog(context),
+                            ),
+
                             // 绑定邮箱
                             _SettingsItem(
                                 icon: Icons.email,
@@ -400,6 +419,205 @@ class _SettingsSection extends StatelessWidget {
                     ),
                 ),
             ],
+        );
+    }
+
+    void _showAccountInfoDialog(BuildContext context) {
+        final userProvider = Provider.of<UserProvider>(context, listen: false);
+        final account = userProvider.localAccount ?? userProvider.currentUser?.account ?? '';
+        final password = userProvider.password ?? '';
+
+        showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+                title: const Row(
+                    children: [
+                        Icon(Icons.info, color: Colors.purple),
+                        SizedBox(width: 8),
+                        Text('Account Info'),
+                    ],
+                ),
+                content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                        Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                                color: Colors.orange.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                            ),
+                            child: const Row(
+                                children: [
+                                    Icon(Icons.warning, color: Colors.orange, size: 20),
+                                    SizedBox(width: 8),
+                                    Expanded(
+                                        child: Text(
+                                            'Please save your account and password!',
+                                            style: TextStyle(color: Colors.orange, fontSize: 13),
+                                        ),
+                                    ),
+                                ],
+                            ),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildInfoRow('Account', account),
+                        const SizedBox(height: 8),
+                        _buildInfoRow('Password', password.isNotEmpty ? password : '(not saved)'),
+                        const SizedBox(height: 12),
+                        Row(
+                            children: [
+                                Expanded(
+                                    child: TextButton.icon(
+                                        onPressed: () {
+                                            Clipboard.setData(ClipboardData(
+                                                text: 'Account: \$account\nPassword: \$password',
+                                            ));
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                                const SnackBar(content: Text('Copied to clipboard')),
+                                            );
+                                        },
+                                        icon: const Icon(Icons.copy, size: 16),
+                                        label: const Text('Copy All'),
+                                    ),
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+                actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('OK'),
+                    ),
+                ],
+            ),
+        );
+    }
+
+    Widget _buildInfoRow(String label, String value) {
+        return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+                color: const Color(0xFF1A1A2E),
+                borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+                children: [
+                    Text(
+                        '\$label: ',
+                        style: const TextStyle(color: Colors.grey, fontSize: 14),
+                    ),
+                    Expanded(
+                        child: Text(
+                            value,
+                            style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                        ),
+                    ),
+                    IconButton(
+                        icon: const Icon(Icons.copy, size: 16, color: Colors.grey),
+                        onPressed: () {
+                            Clipboard.setData(ClipboardData(text: value));
+                        },
+                    ),
+                ],
+            ),
+        );
+    }
+
+    void _showChangePasswordDialog(BuildContext context) {
+        final oldPasswordController = TextEditingController();
+        final newPasswordController = TextEditingController();
+        final confirmPasswordController = TextEditingController();
+
+        showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+                title: const Text('Change Password'),
+                content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                        TextField(
+                            controller: oldPasswordController,
+                            obscureText: true,
+                            decoration: const InputDecoration(
+                                labelText: 'Current Password',
+                                border: OutlineInputBorder(),
+                            ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                            controller: newPasswordController,
+                            obscureText: true,
+                            decoration: const InputDecoration(
+                                labelText: 'New Password',
+                                border: OutlineInputBorder(),
+                            ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                            controller: confirmPasswordController,
+                            obscureText: true,
+                            decoration: const InputDecoration(
+                                labelText: 'Confirm New Password',
+                                border: OutlineInputBorder(),
+                            ),
+                        ),
+                    ],
+                ),
+                actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                    ),
+                    ElevatedButton(
+                        onPressed: () async {
+                            if (newPasswordController.text != confirmPasswordController.text) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Passwords do not match')),
+                                );
+                                return;
+                            }
+                            if (newPasswordController.text.length < 6) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Password must be at least 6 characters')),
+                                );
+                                return;
+                            }
+                            try {
+                                final api = ApiService();
+                                await api.changePassword(
+                                    oldPassword: oldPasswordController.text,
+                                    newPassword: newPasswordController.text,
+                                );
+                                final prefs = await SharedPreferences.getInstance();
+                                await prefs.setString('local_password', newPasswordController.text);
+                                
+                                if (context.mounted) {
+                                    Navigator.pop(context);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                            content: Text('Password changed successfully!'),
+                                            backgroundColor: Colors.green,
+                                        ),
+                                    );
+                                }
+                            } catch (e) {
+                                if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                            content: Text('Failed: \$e'),
+                                            backgroundColor: Colors.red,
+                                        ),
+                                    );
+                                }
+                            }
+                        },
+                        child: const Text('Change'),
+                    ),
+                ],
+            ),
         );
     }
 
