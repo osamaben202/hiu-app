@@ -177,6 +177,13 @@ class ApiService {
         }
     }
 
+    Future<void> changePassword({required String oldPassword, required String newPassword}) async {
+        await _request('POST', '/auth/change-password', body: {
+            'old_password': oldPassword,
+            'new_password': newPassword,
+        });
+    }
+
     // ============ 用户模块 ============
 
     Future<User> getProfile() async {

@@ -473,7 +473,7 @@ class _SettingsSection extends StatelessWidget {
                                     child: TextButton.icon(
                                         onPressed: () {
                                             Clipboard.setData(ClipboardData(
-                                                text: 'Account: \$account\nPassword: \$password',
+                                                text: 'Account: $account\nPassword: $password',
                                             ));
                                             ScaffoldMessenger.of(context).showSnackBar(
                                                 const SnackBar(content: Text('Copied to clipboard')),
@@ -507,7 +507,7 @@ class _SettingsSection extends StatelessWidget {
             child: Row(
                 children: [
                     Text(
-                        '\$label: ',
+                        '$label: ',
                         style: const TextStyle(color: Colors.grey, fontSize: 14),
                     ),
                     Expanded(
@@ -608,7 +608,7 @@ class _SettingsSection extends StatelessWidget {
                                 if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                         SnackBar(
-                                            content: Text('Failed: \$e'),
+                                            content: Text('Failed: $e'),
                                             backgroundColor: Colors.red,
                                         ),
                                     );

@@ -343,7 +343,7 @@ class _RoomPageState extends State<RoomPage> {
             isScrollControlled: true,
             backgroundColor: Colors.transparent,
             builder: (context) => GiftPanel(
-                receivers: seats.map((s) => {
+                receivers: seats.map((s) => <String, String>{
                     'id': s.userId!,
                     'nickname': s.nickname ?? 'Unknown',
                     'avatar': s.avatar ?? '',

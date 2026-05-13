@@ -189,7 +189,7 @@ class _FriendsList extends StatelessWidget {
                             return _FriendCard(
                                 friend: friend,
                                 onTap: () => onUserTap(friend),
-                                onDelete: () => provider.deleteFriend(friend.odId),
+                                onDelete: () => provider.deleteFriend(friend.id),
                             );
                         },
                     ),
