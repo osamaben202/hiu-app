@@ -3,7 +3,7 @@
  */
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:socket_io_client/socket_io_client.dart' as io;
+import 'package:hiu_app/src/services/socket_service.dart';
 import '../providers/user_provider.dart';
 import '../providers/friend_provider.dart';
 import '../services/api_service.dart';
@@ -19,66 +19,27 @@ class FriendsPage extends StatefulWidget {
 class _FriendsPageState extends State<FriendsPage> with SingleTickerProviderStateMixin {
     late TabController _tabController;
     final _searchController = TextEditingController();
-    io.Socket? _socket;
+    // Using global SocketService
 
     @override
     void initState() {
         super.initState();
         _tabController = TabController(length: 3, vsync: this);
         _loadData();
-        _initSocket();
+        // Initialize global socket service for friend notifications
+        final token = await ApiService().getToken();
+        if (token != null) {
+            SocketService().init(token);
+            SocketService().on('friend_request', _onFriendRequest);
+        }
     }
 
-    void _initSocket() {
-        final api = ApiService();
-        final token = api.token;
-        
-        if (token == null) return;
 
-        _socket = io.io(
-            ApiService.baseHost,
-            io.OptionBuilder()
-                
-                .disableAutoConnect()
-                .setAuth({'token': token})
-                .build(),
-        );
-
-        _socket?.onConnect((_) {
-            debugPrint('Friends: Socket connected');
-        });
-
-        // 监听好友申请通知
-        _socket?.on('friend_request', (data) {
-            debugPrint('Friend request received: $data');
-            if (data != null) {
-                // 刷新待处理申请
-                Provider.of<FriendProvider>(context, listen: false).loadPendingRequests();
-                
-                ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                        content: Text('${data['requester_nickname'] ?? 'Someone'} sent you a friend request'),
-                        backgroundColor: Colors.green,
-                        action: SnackBarAction(
-                            label: 'View',
-                            textColor: Colors.white,
-                            onPressed: () {
-                                // 切换到 Requests tab
-                                _tabController.animateTo(1);
-                            },
-                        ),
-                    ),
-                );
-            }
-        });
-
-        _socket?.connect();
-    }
 
     @override
     void dispose() {
-        _socket?.disconnect();
-        _socket?.dispose();
+        
+        SocketService().off('friend_request', _onFriendRequest);
         _tabController.dispose();
         _searchController.dispose();
         super.dispose();
@@ -88,6 +49,27 @@ class _FriendsPageState extends State<FriendsPage> with SingleTickerProviderStat
         final provider = Provider.of<FriendProvider>(context, listen: false);
         await provider.loadFriends();
         await provider.loadPendingRequests();
+    }
+
+    void _onFriendRequest(dynamic data) {
+        debugPrint('Friend request received: $data');
+        if (data != null) {
+            Provider.of<FriendProvider>(context, listen: false).loadPendingRequests();
+            final nickname = data is Map ? (data['requester_nickname'] ?? 'Someone') : 'Someone';
+            ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                    content: Text('$nickname sent you a friend request'),
+                    backgroundColor: Colors.green,
+                    action: SnackBarAction(
+                        label: 'View',
+                        textColor: Colors.white,
+                        onPressed: () {
+                            _tabController.animateTo(1);
+                        },
+                    ),
+                ),
+            );
+        }
     }
 
     void _showUserSearchDialog() {

@@ -3,7 +3,7 @@
  */
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:socket_io_client/socket_io_client.dart' as io;
+import 'package:hiu_app/src/services/socket_service.dart';
 import '../providers/room_provider.dart';
 import '../models/room.dart';
 import '../services/api_service.dart';
@@ -20,7 +20,7 @@ class _RoomListPageState extends State<RoomListPage> {
     final _searchController = TextEditingController();
     String _sortBy = 'created';
     String? _selectedTag;
-    io.Socket? _socket;
+    // Using global SocketService
 
     // 标签列表
     static const List<Map<String, dynamic>> _roomTags = [
@@ -36,60 +36,20 @@ class _RoomListPageState extends State<RoomListPage> {
     @override
     void initState() {
         super.initState();
-        _initSocket();
+        final token = await ApiService().getToken();
+        if (token != null) {
+            SocketService().init(token);
+            SocketService().on('room_update', _onRoomUpdate);
+        }
         Provider.of<RoomProvider>(context, listen: false).fetchRooms();
     }
 
-    void _initSocket() {
-        final api = ApiService();
-        final token = api.token;
-        
-        if (token == null) return;
 
-        _socket = io.io(
-            ApiService.baseHost,
-            io.OptionBuilder()
-                .disableAutoConnect()
-                .setAuth({'token': token})
-                .build(),
-        );
-
-        _socket?.onConnect((_) {
-            debugPrint('RoomList: Socket connected');
-        });
-
-        _socket?.on('new_room', (data) {
-            debugPrint('New room created: $data');
-            if (data != null) {
-                final newRoom = Room.fromJson(data);
-                final provider = Provider.of<RoomProvider>(context, listen: false);
-                if (!mounted) return;
-                final exists = provider.rooms.any((r) => r.id == newRoom.id);
-                if (!exists) {
-                    setState(() {
-                        provider.rooms.insert(0, newRoom);
-                    });
-                }
-            }
-        });
-
-        _socket?.on('room_deleted', (data) {
-            debugPrint('Room deleted: $data');
-            if (data != null && data['room_id'] != null) {
-                final provider = Provider.of<RoomProvider>(context, listen: false);
-                setState(() {
-                    provider.rooms.removeWhere((r) => r.id == data['room_id']);
-                });
-            }
-        });
-
-        _socket?.connect();
-    }
 
     @override
     void dispose() {
-        _socket?.disconnect();
-        _socket?.dispose();
+        
+        SocketService().off('room_update', _onRoomUpdate);
         _searchController.dispose();
         super.dispose();
     }

@@ -3,7 +3,7 @@
  */
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:socket_io_client/socket_io_client.dart' as io;
+import 'package:hiu_app/src/services/socket_service.dart';
 import '../providers/user_provider.dart';
 import '../providers/room_provider.dart';
 import '../providers/friend_provider.dart';
@@ -24,10 +24,11 @@ class RoomPage extends StatefulWidget {
 
 class _RoomPageState extends State<RoomPage> {
     final _messageController = TextEditingController();
+    SocketService get socketService => SocketService();
     final _scrollController = ScrollController();
     final List<ChatMessage> _messages = [];
     
-    io.Socket? _socket;
+    // Using global SocketService instead of local socket
     bool _isConnected = false;
     bool _isLoading = true;
     Room? _room;
@@ -37,7 +38,15 @@ class _RoomPageState extends State<RoomPage> {
     void initState() {
         super.initState();
         _loadRoom();
-        _initSocket();
+        // Initialize global socket service
+        final token = await ApiService().getToken();
+        if (token != null) {
+            SocketService().init(token);
+            // Listen to socket events
+            _setupSocketListeners();
+            // Join the room
+            SocketService().joinRoom(widget.roomId);
+        }
     }
 
     Future<void> _loadRoom() async {
@@ -52,160 +61,7 @@ class _RoomPageState extends State<RoomPage> {
         }
     }
 
-    void _initSocket() {
-        final api = ApiService();
-        final token = api.token;
-        
-        if (token == null) {
-            debugPrint('No token available for socket connection');
-            return;
-        }
 
-        _socket = io.io(
-            ApiService.baseHost,
-            io.OptionBuilder()
-                
-                .disableAutoConnect()
-                .setAuth({'token': token})
-                .setTimeout(10000)
-                .setReconnectionAttempts(5)
-                .setReconnectionDelay(1000)
-                .build(),
-        );
-
-        _socket?.onConnect((_) {
-            debugPrint('Socket connected');
-            setState(() => _isConnected = true);
-            // 加入房间
-            _socket?.emit('join_room', {'room_id': widget.roomId});
-        });
-
-        _socket?.onDisconnect((_) {
-            debugPrint('Socket disconnected');
-            setState(() => _isConnected = false);
-        });
-
-        _socket?.onConnectError((error) {
-            debugPrint('Socket connect error: $error');
-            setState(() => _isConnected = false);
-        });
-
-        _socket?.onError((error) {
-            debugPrint('Socket error: $error');
-        });
-
-        // 监听聊天消息 - 确保消息持久化到列表
-        _socket?.on('chat_message', (data) {
-            debugPrint('Received chat message: $data');
-            if (data != null && data['content'] != null) {
-                final message = ChatMessage(
-                    id: data['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
-                    roomId: data['room_id']?.toString(),
-                    senderId: data['sender_id']?.toString() ?? '',
-                    senderNickname: data['sender_nickname']?.toString(),
-                    senderAvatar: data['sender_avatar']?.toString(),
-                    type: data['type']?.toString() ?? 'text',
-                    content: data['content']?.toString() ?? '',
-                    createdAt: data['created_at'] != null
-                        ? DateTime.tryParse(data['created_at'].toString()) ?? DateTime.now()
-                        : DateTime.now(),
-                );
-                setState(() {
-                    _messages.add(message);
-                });
-                // 滚动到底部
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (_scrollController.hasClients) {
-                        _scrollController.animateTo(
-                            _scrollController.position.maxScrollExtent,
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeOut,
-                        );
-                    }
-                });
-            }
-        });
-
-        // 监听错误消息
-        _socket?.on('error', (data) {
-            debugPrint('Socket error event: $data');
-            if (data != null && data['message'] != null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(data['message'].toString()), backgroundColor: Colors.red),
-                );
-            }
-        });
-
-        // 监听好友申请通知
-        _socket?.on('friend_request', (data) {
-            debugPrint('Received friend request: $data');
-            if (data != null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                        content: Text('${data['requester_nickname'] ?? 'Someone'} sent you a friend request'),
-                        backgroundColor: Colors.green,
-                        action: SnackBarAction(
-                            label: 'View',
-                            textColor: Colors.white,
-                            onPressed: () {
-                                // 切换到好友页面
-                            },
-                        ),
-                    ),
-                );
-            }
-        });
-
-        // 监听上麦申请通知（房主收到）
-        _socket?.on('seat_request', (data) {
-            debugPrint('Received seat request: $data');
-            if (data != null && mounted) {
-                _showSeatRequestDialog(data);
-            }
-        });
-
-        // 监听上麦申请已发送确认
-        _socket?.on('seat_request_sent', (data) {
-            debugPrint('Seat request sent: $data');
-            if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Request sent, waiting for approval...')),
-                );
-            }
-        });
-
-        // 监听上麦被批准
-        _socket?.on('seat_approved', (data) {
-            debugPrint('Seat approved: $data');
-            if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Your seat request was approved!'), backgroundColor: Colors.green),
-                );
-                // 刷新房间详情
-                _roomProvider?.fetchRoomDetail(widget.roomId);
-            }
-        });
-
-        // 监听上麦被拒绝
-        _socket?.on('seat_rejected', (data) {
-            debugPrint('Seat rejected: $data');
-            if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Your seat request was rejected'), backgroundColor: Colors.orange),
-                );
-            }
-        });
-
-        // 监听麦位更新
-        _socket?.on('seat_update', (data) {
-            debugPrint('Seat update: $data');
-            // 刷新房间详情以获取最新状态
-            _roomProvider?.fetchRoomDetail(widget.roomId);
-        });
-
-        // 连接
-        _socket?.connect();
-    }
 
     void _showSeatRequestDialog(Map<String, dynamic> data) {
         final user = Provider.of<UserProvider>(context, listen: false).currentUser;
@@ -240,22 +96,14 @@ class _RoomPageState extends State<RoomPage> {
                     TextButton(
                         onPressed: () {
                             Navigator.pop(context);
-                            _socket?.emit('reject_seat', {
-                                'room_id': widget.roomId,
-                                'seat_index': data['seat_index'],
-                                'requester_id': data['requester_id'],
-                            });
+                            socketService.rejectSeat(widget.roomId, data['requester_id'].toString());
                         },
                         child: const Text('Reject'),
                     ),
                     ElevatedButton(
                         onPressed: () {
                             Navigator.pop(context);
-                            _socket?.emit('approve_seat', {
-                                'room_id': widget.roomId,
-                                'seat_index': data['seat_index'],
-                                'requester_id': data['requester_id'],
-                            });
+                            socketService.approveSeat(widget.roomId, data['requester_id'].toString(), data['seat_index'] as int);
                         },
                         child: const Text('Approve'),
                     ),
@@ -267,9 +115,9 @@ class _RoomPageState extends State<RoomPage> {
     @override
     void dispose() {
         // 离开房间并断开连接
-        _socket?.emit('leave_room', {'room_id': widget.roomId});
-        _socket?.disconnect();
-        _socket?.dispose();
+        SocketService().leaveRoom(widget.roomId);
+        // SocketService is global, don't dispose here
+        _removeSocketListeners();
         _messageController.dispose();
         _scrollController.dispose();
         super.dispose();
@@ -299,7 +147,7 @@ class _RoomPageState extends State<RoomPage> {
 
         if (confirmed == true && mounted) {
             // 离开房间
-            _socket?.emit('leave_room', {'room_id': widget.roomId});
+            socketService.leaveRoom(widget.roomId);
             await _roomProvider?.leaveRoom(widget.roomId);
             if (mounted) {
                 Navigator.of(context).pop();
@@ -309,7 +157,7 @@ class _RoomPageState extends State<RoomPage> {
 
     void _sendMessage() {
         if (_messageController.text.isEmpty) return;
-        if (_socket == null || !_isConnected) {
+        if (!SocketService().isConnected) {
             ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Not connected to chat'), backgroundColor: Colors.orange),
             );
@@ -317,13 +165,141 @@ class _RoomPageState extends State<RoomPage> {
         }
         
         // 通过 Socket 发送消息
-        _socket?.emit('chat_message', {
-            'room_id': widget.roomId,
-            'content': _messageController.text.trim(),
-            'type': 'text',
-        });
+        socketService.sendChatMessage(widget.roomId, _messageController.text.trim());
         
         _messageController.clear();
+    }
+
+    void _setupSocketListeners() {
+        socketService.on('chat_message', _onChatMessage);
+        socketService.on('seat_request', _onSeatRequest);
+        socketService.on('seat_request_sent', _onSeatRequestSent);
+        socketService.on('seat_approved', _onSeatApproved);
+        socketService.on('seat_rejected', _onSeatRejected);
+        socketService.on('seat_update', _onSeatUpdate);
+        socketService.on('user_joined', _onUserJoined);
+        socketService.on('user_left', _onUserLeft);
+        socketService.on('room_closed', _onRoomClosed);
+    }
+
+    void _removeSocketListeners() {
+        socketService.off('chat_message', _onChatMessage);
+        socketService.off('seat_request', _onSeatRequest);
+        socketService.off('seat_request_sent', _onSeatRequestSent);
+        socketService.off('seat_approved', _onSeatApproved);
+        socketService.off('seat_rejected', _onSeatRejected);
+        socketService.off('seat_update', _onSeatUpdate);
+        socketService.off('user_joined', _onUserJoined);
+        socketService.off('user_left', _onUserLeft);
+        socketService.off('room_closed', _onRoomClosed);
+    }
+
+    void _onChatMessage(dynamic data) {
+        debugPrint('Received chat message: $data');
+        if (data != null && data['content'] != null) {
+            final message = ChatMessage(
+                id: data['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
+                roomId: data['room_id']?.toString(),
+                senderId: data['sender_id']?.toString() ?? '',
+                senderNickname: data['sender_nickname']?.toString(),
+                senderAvatar: data['sender_avatar']?.toString(),
+                type: data['type']?.toString() ?? 'text',
+                content: data['content']?.toString() ?? '',
+                createdAt: data['created_at'] != null
+                    ? DateTime.tryParse(data['created_at'].toString()) ?? DateTime.now()
+                    : DateTime.now(),
+            );
+            if (mounted) {
+                setState(() {
+                    _messages.add(message);
+                });
+                _scrollToBottom();
+            }
+        }
+    }
+
+    void _onSeatRequest(dynamic data) {
+        debugPrint('Received seat request: $data');
+        if (data != null && mounted) {
+            _showSeatRequestDialog(data is Map<String, dynamic> ? data : Map<String, dynamic>.from(data));
+        }
+    }
+
+    void _onSeatRequestSent(dynamic data) {
+        debugPrint('Seat request sent: $data');
+        if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Request sent, waiting for approval...')),
+            );
+        }
+    }
+
+    void _onSeatApproved(dynamic data) {
+        debugPrint('Seat approved: $data');
+        if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Your seat request was approved!'), backgroundColor: Colors.green),
+            );
+            _roomProvider?.fetchRoomDetail(widget.roomId);
+        }
+    }
+
+    void _onSeatRejected(dynamic data) {
+        debugPrint('Seat rejected: $data');
+        if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Your seat request was rejected'), backgroundColor: Colors.orange),
+            );
+        }
+    }
+
+    void _onSeatUpdate(dynamic data) {
+        debugPrint('Seat update: $data');
+        if (mounted) {
+            _roomProvider?.fetchRoomDetail(widget.roomId);
+        }
+    }
+
+    void _onUserJoined(dynamic data) {
+        debugPrint('User joined: $data');
+        if (data != null && mounted) {
+            final msg = ChatMessage(
+                id: DateTime.now().millisecondsSinceEpoch.toString(),
+                roomId: widget.roomId,
+                senderId: '',
+                senderNickname: null,
+                type: 'system',
+                content: '${data['nickname']} joined the room',
+                createdAt: DateTime.now(),
+            );
+            setState(() => _messages.add(msg));
+        }
+    }
+
+    void _onUserLeft(dynamic data) {
+        debugPrint('User left: $data');
+        if (data != null && mounted) {
+            final msg = ChatMessage(
+                id: DateTime.now().millisecondsSinceEpoch.toString(),
+                roomId: widget.roomId,
+                senderId: '',
+                senderNickname: null,
+                type: 'system',
+                content: '${data['nickname']} left the room',
+                createdAt: DateTime.now(),
+            );
+            setState(() => _messages.add(msg));
+        }
+    }
+
+    void _onRoomClosed(dynamic data) {
+        debugPrint('Room closed: $data');
+        if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Room has been closed by the host'), backgroundColor: Colors.red),
+            );
+            Navigator.of(context).pop();
+        }
     }
 
     void _showGiftPanel() {
@@ -487,10 +463,7 @@ class _RoomPageState extends State<RoomPage> {
 
         if (confirmed == true && mounted) {
             // 通过 socket 发送上麦申请
-            _socket?.emit('seat_request', {
-                'room_id': widget.roomId,
-                'seat_index': seatIndex,
-            });
+            socketService.requestSeat(widget.roomId, seatIndex);
         }
     }
 
