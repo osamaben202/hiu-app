@@ -35,14 +35,12 @@ class _RankingsPageState extends State<RankingsPage> with SingleTickerProviderSt
         setState(() => _isLoading = true);
         try {
             final api = ApiService();
-            final results = await Future.wait([
-                api.getCharmRanking(period: _period),
-                api.getContributionRanking(period: _period),
-            ]);
+            final charmResult = await api.getCharmRanking(period: _period);
+            final contributionResult = await api.getContributionRanking(period: _period);
             if (mounted) {
                 setState(() {
-                    _charmList = results[0];
-                    _contributionList = results[1];
+                    _charmList = charmResult;
+                    _contributionList = contributionResult;
                     _isLoading = false;
                 });
             }
