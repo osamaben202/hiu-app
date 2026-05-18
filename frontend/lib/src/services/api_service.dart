@@ -178,7 +178,7 @@ class ApiService {
     }
 
     Future<void> changePassword({required String oldPassword, required String newPassword}) async {
-        await _request('POST', '/auth/change-password', body: {
+        await _request('PUT', '/auth/change-password', body: {
             'old_password': oldPassword,
             'new_password': newPassword,
         });
@@ -440,6 +440,71 @@ class ApiService {
             return data.map((e) => User.fromJson(e as Map<String, dynamic>)).toList();
         }
         return [];
+    }
+    }
+
+    // ============ 排行榜模块 ============
+
+    /// 获取魅力榜（收到礼物排名）
+    Future<List<Map<String, dynamic>>> getCharmRanking({String period = 'all', int limit = 20}) async {
+        final result = await _request('GET', '/rankings/charm', queryParams: {
+            'period': period,
+            'limit': limit.toString(),
+        });
+        return List<Map<String, dynamic>>.from(result['data']);
+    }
+
+    /// 获取贡献榜（送出礼物排名）
+    Future<List<Map<String, dynamic>>> getContributionRanking({String period = 'all', int limit = 20}) async {
+        final result = await _request('GET', '/rankings/contribution', queryParams: {
+            'period': period,
+            'limit': limit.toString(),
+        });
+        return List<Map<String, dynamic>>.from(result['data']);
+    }
+
+    /// 获取热门房间榜
+    Future<List<Map<String, dynamic>>> getRoomRanking({int limit = 10}) async {
+        final result = await _request('GET', '/rankings/room', queryParams: {
+            'limit': limit.toString(),
+        });
+        return List<Map<String, dynamic>>.from(result['data']);
+    }
+
+    // ============ 关注模块 ============
+
+    /// 关注用户
+    Future<void> followUser(String userId) async {
+        await _request('POST', '/follows/$userId');
+    }
+
+    /// 取消关注
+    Future<void> unfollowUser(String userId) async {
+        await _request('DELETE', '/follows/$userId');
+    }
+
+    /// 获取我的关注列表
+    Future<Map<String, dynamic>> getFollowing({int page = 1, int limit = 20}) async {
+        final result = await _request('GET', '/follows/following', queryParams: {
+            'page': page.toString(),
+            'limit': limit.toString(),
+        });
+        return result['data'];
+    }
+
+    /// 获取我的粉丝列表
+    Future<Map<String, dynamic>> getFollowers({int page = 1, int limit = 20}) async {
+        final result = await _request('GET', '/follows/followers', queryParams: {
+            'page': page.toString(),
+            'limit': limit.toString(),
+        });
+        return result['data'];
+    }
+
+    /// 获取用户的关注数和粉丝数
+    Future<Map<String, dynamic>> getFollowCount(String userId) async {
+        final result = await _request('GET', '/follows/$userId/count');
+        return result['data'];
     }
 }
 

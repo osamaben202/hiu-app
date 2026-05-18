@@ -10,6 +10,7 @@ import '../providers/user_provider.dart';
 import 'login_page.dart';
 import 'edit_profile_page.dart';
 import 'pricing_settings_page.dart';
+import 'rankings_page.dart';
 import 'coin_distribution_page.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -73,6 +74,8 @@ class _ProfilePageState extends State<ProfilePage> {
 
                                     // 设置菜单
                                     _SettingsSection(user: user),
+                                    const SizedBox(height: 20),
+                                    _RankingsButton(),
                                 ],
                             ),
                         ),
@@ -737,6 +740,82 @@ class _SettingsItem extends StatelessWidget {
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: onTap,
+        );
+    }
+}
+
+/**
+ * 排行榜按钮
+ */
+class _RankingsButton extends StatelessWidget {
+    @override
+    Widget build(BuildContext context) {
+        return Container(
+            decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                    BoxShadow(
+                        color: Colors.grey.withOpacity(0.1),
+                        blurRadius: 15,
+                        offset: const Offset(0, 5),
+                    ),
+                ],
+            ),
+            child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                    onTap: () {
+                        Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const RankingsPage()),
+                        );
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Row(
+                            children: [
+                                Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                        color: const Color(0xFFFFD700).withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(
+                                        Icons.emoji_events,
+                                        color: Color(0xFFFFD700),
+                                        size: 28,
+                                    ),
+                                ),
+                                const SizedBox(width: 16),
+                                const Expanded(
+                                    child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                            Text(
+                                                'Rankings',
+                                                style: TextStyle(
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.bold,
+                                                ),
+                                            ),
+                                            SizedBox(height: 4),
+                                            Text(
+                                                'View charm and contribution rankings',
+                                                style: TextStyle(
+                                                    color: Colors.grey,
+                                                    fontSize: 13,
+                                                ),
+                                            ),
+                                        ],
+                                    ),
+                                ),
+                                const Icon(Icons.chevron_right, color: Colors.grey),
+                            ],
+                        ),
+                    ),
+                ),
+            ),
         );
     }
 }

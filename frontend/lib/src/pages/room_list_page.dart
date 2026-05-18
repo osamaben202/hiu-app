@@ -19,13 +19,24 @@ class RoomListPage extends StatefulWidget {
 class _RoomListPageState extends State<RoomListPage> {
     final _searchController = TextEditingController();
     String _sortBy = 'created';
+    String? _selectedTag;
     io.Socket? _socket;
+
+    // 标签列表
+    static const List<Map<String, dynamic>> _roomTags = [
+        {'id': null, 'name': 'All'},
+        {'id': 'chat', 'name': 'Chat'},
+        {'id': 'music', 'name': 'Music'},
+        {'id': 'game', 'name': 'Gaming'},
+        {'id': 'dating', 'name': 'Dating'},
+        {'id': 'study', 'name': 'Study'},
+        {'id': 'asr', 'name': 'ASR'},
+    ];
 
     @override
     void initState() {
         super.initState();
         _initSocket();
-        // Load initial room list
         Provider.of<RoomProvider>(context, listen: false).fetchRooms();
     }
 
@@ -38,7 +49,6 @@ class _RoomListPageState extends State<RoomListPage> {
         _socket = io.io(
             ApiService.baseHost,
             io.OptionBuilder()
-                
                 .disableAutoConnect()
                 .setAuth({'token': token})
                 .build(),
@@ -48,15 +58,12 @@ class _RoomListPageState extends State<RoomListPage> {
             debugPrint('RoomList: Socket connected');
         });
 
-        // 监听新房间创建
         _socket?.on('new_room', (data) {
             debugPrint('New room created: $data');
             if (data != null) {
                 final newRoom = Room.fromJson(data);
-                // 添加到房间列表
                 final provider = Provider.of<RoomProvider>(context, listen: false);
                 if (!mounted) return;
-                // 检查是否已存在
                 final exists = provider.rooms.any((r) => r.id == newRoom.id);
                 if (!exists) {
                     setState(() {
@@ -66,7 +73,6 @@ class _RoomListPageState extends State<RoomListPage> {
             }
         });
 
-        // 监听房间删除
         _socket?.on('room_deleted', (data) {
             debugPrint('Room deleted: $data');
             if (data != null && data['room_id'] != null) {
@@ -100,6 +106,12 @@ class _RoomListPageState extends State<RoomListPage> {
             keyword: _searchController.text.isEmpty ? null : _searchController.text,
             sort: _sortBy,
         );
+    }
+
+    void _filterByTag(String? tag) {
+        setState(() => _selectedTag = tag);
+        // TODO: 实现标签筛选（后端需支持）
+        _search();
     }
 
     @override
@@ -168,6 +180,34 @@ class _RoomListPageState extends State<RoomListPage> {
                         ),
                     ),
                     
+                    // 标签筛选
+                    SizedBox(
+                        height: 40,
+                        child: ListView.builder(
+                            scrollDirection: Axis.horizontal,
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            itemCount: _roomTags.length,
+                            itemBuilder: (context, index) {
+                                final tag = _roomTags[index];
+                                final isSelected = _selectedTag == tag['id'];
+                                return Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: FilterChip(
+                                        label: Text(tag['name']),
+                                        selected: isSelected,
+                                        onSelected: (_) => _filterByTag(tag['id']),
+                                        selectedColor: const Color(0xFF6C5CE7).withOpacity(0.2),
+                                        checkmarkColor: const Color(0xFF6C5CE7),
+                                        labelStyle: TextStyle(
+                                            color: isSelected ? const Color(0xFF6C5CE7) : Colors.grey[700],
+                                        ),
+                                    ),
+                                );
+                            },
+                        ),
+                    ),
+                    const SizedBox(height: 8),
+                    
                     // 房间列表
                     Expanded(
                         child: Consumer<RoomProvider>(
@@ -233,7 +273,6 @@ class _RoomListPageState extends State<RoomListPage> {
     Future<void> _joinRoom(Room room) async {
         final provider = Provider.of<RoomProvider>(context, listen: false);
         
-        // 如果是私密房间，需要输入密码
         if (!room.isPublic) {
             final password = await showDialog<String>(
                 context: context,
@@ -351,6 +390,10 @@ class _RoomCard extends StatelessWidget {
                                                         size: 16,
                                                         color: Colors.grey,
                                                     ),
+                                                if (room.tags.isNotEmpty) ...[
+                                                    const SizedBox(width: 4),
+                                                    _buildTagChip(room.tags),
+                                                ],
                                             ],
                                         ),
                                         const SizedBox(height: 4),
@@ -404,6 +447,45 @@ class _RoomCard extends StatelessWidget {
             ),
         );
     }
+
+    Widget _buildTagChip(String tag) {
+        Color chipColor;
+        switch (tag) {
+            case 'music':
+                chipColor = Colors.pink;
+                break;
+            case 'game':
+                chipColor = Colors.green;
+                break;
+            case 'dating':
+                chipColor = Colors.red;
+                break;
+            case 'study':
+                chipColor = Colors.blue;
+                break;
+            case 'asr':
+                chipColor = Colors.orange;
+                break;
+            default:
+                chipColor = Colors.purple;
+        }
+        
+        return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+                color: chipColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+                tag.toUpperCase(),
+                style: TextStyle(
+                    fontSize: 10,
+                    color: chipColor,
+                    fontWeight: FontWeight.bold,
+                ),
+            ),
+        );
+    }
 }
 
 /**
@@ -422,11 +504,7 @@ class _InfoChip extends StatelessWidget {
     Widget build(BuildContext context) {
         return Row(
             children: [
-                Icon(
-                    icon,
-                    size: 14,
-                    color: Colors.grey,
-                ),
+                Icon(icon, size: 14, color: Colors.grey),
                 const SizedBox(width: 4),
                 Text(
                     label,

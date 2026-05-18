@@ -18,7 +18,18 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
     final _descriptionController = TextEditingController();
     bool _isPublic = true;
     final _passwordController = TextEditingController();
+    String _selectedTag = 'chat';
     bool _isLoading = false;
+
+    // 预设的房间标签
+    static const List<Map<String, dynamic>> _roomTags = [
+        {'id': 'chat', 'name': 'Chat', 'icon': Icons.chat},
+        {'id': 'music', 'name': 'Music', 'icon': Icons.music_note},
+        {'id': 'game', 'name': 'Gaming', 'icon': Icons.sports_esports},
+        {'id': 'dating', 'name': 'Dating', 'icon': Icons.favorite},
+        {'id': 'study', 'name': 'Study', 'icon': Icons.school},
+        {'id': 'asr', 'name': 'ASR', 'icon': Icons.mic},
+    ];
 
     @override
     void dispose() {
@@ -51,6 +62,7 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
             description: _descriptionController.text,
             isPublic: _isPublic,
             password: _isPublic ? null : _passwordController.text,
+            tags: _selectedTag,
         );
 
         setState(() => _isLoading = false);
@@ -99,6 +111,70 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
                                 border: OutlineInputBorder(),
                                 alignLabelWithHint: true,
                             ),
+                        ),
+                        const SizedBox(height: 20),
+
+                        // 房间标签选择
+                        const Text(
+                            'Room Category',
+                            style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                            ),
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                            spacing: 12,
+                            runSpacing: 12,
+                            children: _roomTags.map((tag) {
+                                final isSelected = _selectedTag == tag['id'];
+                                return GestureDetector(
+                                    onTap: () {
+                                        setState(() => _selectedTag = tag['id']);
+                                    },
+                                    child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 12,
+                                        ),
+                                        decoration: BoxDecoration(
+                                            color: isSelected
+                                                ? const Color(0xFF6C5CE7)
+                                                : Colors.white,
+                                            borderRadius: BorderRadius.circular(12),
+                                            border: Border.all(
+                                                color: isSelected
+                                                    ? const Color(0xFF6C5CE7)
+                                                    : Colors.grey[300]!,
+                                            ),
+                                        ),
+                                        child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                                Icon(
+                                                    tag['icon'],
+                                                    size: 20,
+                                                    color: isSelected
+                                                        ? Colors.white
+                                                        : Colors.grey[600],
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Text(
+                                                    tag['name'],
+                                                    style: TextStyle(
+                                                        color: isSelected
+                                                            ? Colors.white
+                                                            : Colors.grey[700],
+                                                        fontWeight: isSelected
+                                                            ? FontWeight.bold
+                                                            : FontWeight.normal,
+                                                    ),
+                                                ),
+                                            ],
+                                        ),
+                                    ),
+                                );
+                            }).toList(),
                         ),
                         const SizedBox(height: 20),
 

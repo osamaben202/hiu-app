@@ -21,6 +21,8 @@ const diamondRoutes = require('./routes/diamonds');
 const chatRoutes = require('./routes/chat');
 const videoRoutes = require('./routes/video');
 const adminRoutes = require('./routes/admin');
+const rankingsRoutes = require('./routes/rankings');
+const followsRoutes = require('./routes/follows');
 
 // 导入Socket.IO
 const { initSocket } = require('./socket');
@@ -83,6 +85,8 @@ app.use('/api/diamonds', diamondRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/video', videoRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/rankings', rankingsRoutes);
+app.use('/api/follows', followsRoutes);
 
 // Ensure uploads directory exists
 if (!fs.existsSync('uploads')) fs.mkdirSync('uploads', { recursive: true });
