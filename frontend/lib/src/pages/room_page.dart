@@ -170,6 +170,16 @@ class _RoomPageState extends State<RoomPage> {
         _messageController.clear();
     }
 
+    Future<void> _initSocketAndJoinRoom() async {
+        final api = ApiService();
+        final token = await api.getToken();
+        if (token != null) {
+            SocketService().init(token);
+            _setupSocketListeners();
+            SocketService().joinRoom(widget.roomId);
+        }
+    }
+
     void _setupSocketListeners() {
         socketService.on('chat_message', _onChatMessage);
         socketService.on('seat_request', _onSeatRequest);
@@ -300,6 +310,18 @@ class _RoomPageState extends State<RoomPage> {
             );
             Navigator.of(context).pop();
         }
+    }
+
+    void _scrollToBottom() {
+        Future.delayed(const Duration(milliseconds: 100), () {
+            if (_scrollController.hasClients) {
+                _scrollController.animateTo(
+                    _scrollController.position.maxScrollExtent,
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOut,
+                );
+            }
+        });
     }
 
     void _showGiftPanel() {

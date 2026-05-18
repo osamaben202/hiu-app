@@ -36,20 +36,38 @@ class _RoomListPageState extends State<RoomListPage> {
     @override
     void initState() {
         super.initState();
-        final token = await ApiService().getToken();
-        if (token != null) {
-            SocketService().init(token);
-            SocketService().on('room_update', _onRoomUpdate);
-        }
+        _initSocketListener();
         Provider.of<RoomProvider>(context, listen: false).fetchRooms();
     }
 
 
 
+    void _onRoomUpdate(dynamic data) {
+        debugPrint('Room update: $data');
+        if (mounted) {
+            Provider.of<RoomProvider>(context, listen: false).fetchRooms();
+        }
+    }
+
+    Future<void> _initSocketListener() async {
+        final api = ApiService();
+        final token = await api.getToken();
+        if (token != null) {
+            SocketService().init(token);
+            SocketService().on('room_update', _onRoomUpdate);
+        }
+    }
+
+    void _onRoomUpdate(dynamic data) {
+        if (mounted) {
+            Provider.of<RoomProvider>(context, listen: false).fetchRooms();
+        }
+    }
+
     @override
     void dispose() {
         
-        SocketService().off('room_update', _onRoomUpdate);
+        if (mounted) { SocketService().off('room_update', _onRoomUpdate); }
         _searchController.dispose();
         super.dispose();
     }
@@ -492,6 +510,28 @@ class _PasswordDialog extends StatefulWidget {
 
 class _PasswordDialogState extends State<_PasswordDialog> {
     final _passwordController = TextEditingController();
+
+    void _onRoomUpdate(dynamic data) {
+        debugPrint('Room update: $data');
+        if (mounted) {
+            Provider.of<RoomProvider>(context, listen: false).fetchRooms();
+        }
+    }
+
+    Future<void> _initSocketListener() async {
+        final api = ApiService();
+        final token = await api.getToken();
+        if (token != null) {
+            SocketService().init(token);
+            SocketService().on('room_update', _onRoomUpdate);
+        }
+    }
+
+    void _onRoomUpdate(dynamic data) {
+        if (mounted) {
+            Provider.of<RoomProvider>(context, listen: false).fetchRooms();
+        }
+    }
 
     @override
     void dispose() {
