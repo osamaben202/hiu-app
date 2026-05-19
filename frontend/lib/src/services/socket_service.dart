@@ -43,30 +43,32 @@ class SocketService with ChangeNotifier {
     void _connect() {
         _socket?.dispose();
 
-        debugPrint('[SocketService] Connecting to ${ApiService.baseHost}...');
+        debugPrint('[SocketService] Connecting to ${ApiService.baseHost} with websocket transport...');
 
+        // 使用 websocket-only 传输，避免 polling 兼容性问题
         _socket = io.io(
             ApiService.baseHost,
-            io.OptionBuilder()
-                .setTransports(['websocket'])
-                .disableAutoConnect()
-                .setAuth({'token': _token})
-                .setTimeout(10000)
-                .enableReconnection()
-                .setReconnectionAttempts(100)
-                .setReconnectionDelay(2000)
-                .build(),
+            <String, dynamic>{
+                'transports': ['websocket'],
+                'autoConnect': false,
+                'auth': {'token': _token},
+                'reconnection': true,
+                'reconnectionAttempts': 100,
+                'reconnectionDelay': 2000,
+                'timeout': 10000,
+                'forceNew': true,
+            },
         );
 
         _socket?.onConnect((_) {
-            debugPrint('[SocketService] Connected successfully, socket.id: ${_socket?.id}');
+            debugPrint('[SocketService] Connected! socket.id: ${_socket?.id}');
             _isConnected = true;
             notifyListeners();
             // 发送所有待发事件
             _flushPendingEmits();
             // 自动重新加入房间
             if (_currentRoomId != null) {
-                debugPrint('[SocketService] Re-joining room: $_currentRoomId');
+                debugPrint('[SocketService] Auto re-joining room: $_currentRoomId');
                 _socket!.emit('join_room', {'room_id': _currentRoomId});
             }
             // 执行连接成功回调
@@ -100,50 +102,41 @@ class SocketService with ChangeNotifier {
     }
 
     void _setupPersistentListeners() {
-        // 聊天消息
         _socket?.on('chat_message', (data) {
             _notifyListeners('chat_message', data);
         });
 
-        // 好友申请通知
         _socket?.on('friend_request', (data) {
-            debugPrint('[SocketService] Friend request: $data');
+            debugPrint('[SocketService] Friend request received: $data');
             _notifyListeners('friend_request', data);
         });
 
-        // 好友接受通知
         _socket?.on('friend_accepted', (data) {
             debugPrint('[SocketService] Friend accepted: $data');
             _notifyListeners('friend_accepted', data);
         });
 
-        // 上麦申请
         _socket?.on('seat_request', (data) {
             debugPrint('[SocketService] Seat request: $data');
             _notifyListeners('seat_request', data);
         });
 
-        // 上麦申请已发送确认
         _socket?.on('seat_request_sent', (data) {
             _notifyListeners('seat_request_sent', data);
         });
 
-        // 上麦被批准
         _socket?.on('seat_approved', (data) {
             _notifyListeners('seat_approved', data);
         });
 
-        // 上麦被拒绝
         _socket?.on('seat_rejected', (data) {
             _notifyListeners('seat_rejected', data);
         });
 
-        // 麦位更新
         _socket?.on('seat_update', (data) {
             _notifyListeners('seat_update', data);
         });
 
-        // 用户加入/离开
         _socket?.on('user_joined', (data) {
             _notifyListeners('user_joined', data);
         });
@@ -152,36 +145,30 @@ class SocketService with ChangeNotifier {
             _notifyListeners('user_left', data);
         });
 
-        // 房间关闭
         _socket?.on('room_closed', (data) {
             debugPrint('[SocketService] Room closed: $data');
             _notifyListeners('room_closed', data);
         });
 
-        // 房间删除
         _socket?.on('room_deleted', (data) {
             debugPrint('[SocketService] Room deleted: $data');
             _notifyListeners('room_deleted', data);
         });
 
-        // 房间更新
         _socket?.on('room_update', (data) {
             _notifyListeners('room_update', data);
         });
 
-        // 礼物
         _socket?.on('gift_sent', (data) {
             _notifyListeners('gift_sent', data);
         });
     }
 
-    // 添加事件监听
     void on(String event, Function callback) {
         _listeners.putIfAbsent(event, () => []);
         _listeners[event]!.add(callback);
     }
 
-    // 移除事件监听
     void off(String event, Function callback) {
         _listeners[event]?.remove(callback);
     }
@@ -196,21 +183,17 @@ class SocketService with ChangeNotifier {
         });
     }
 
-    // 待发送的事件队列（连接前缓存）
     final List<_PendingEmit> _pendingEmits = [];
 
-    // Emit 事件
     void emit(String event, dynamic data) {
         if (_socket != null && _isConnected) {
             _socket!.emit(event, data);
         } else {
-            // 缓存待发送的事件，连接后自动重发
             debugPrint('[SocketService] Queuing $event (not connected)');
             _pendingEmits.add(_PendingEmit(event, data));
         }
     }
 
-    // 发送所有待发事件
     void _flushPendingEmits() {
         for (final pending in _pendingEmits) {
             if (_socket != null) {
@@ -221,7 +204,7 @@ class SocketService with ChangeNotifier {
         _pendingEmits.clear();
     }
 
-    // 添加连接成功回调（一次性）
+    /// 添加一次性连接成功回调
     void onConnected(VoidCallback callback) {
         if (_isConnected) {
             callback();
@@ -230,7 +213,6 @@ class SocketService with ChangeNotifier {
         }
     }
 
-    // 加入房间
     void joinRoom(String roomId) {
         _currentRoomId = roomId;
         if (_isConnected) {
@@ -242,7 +224,6 @@ class SocketService with ChangeNotifier {
         }
     }
 
-    // 离开房间
     void leaveRoom(String roomId) {
         _currentRoomId = null;
         if (_isConnected) {
@@ -250,7 +231,6 @@ class SocketService with ChangeNotifier {
         }
     }
 
-    // 发送聊天消息
     void sendChatMessage(String roomId, String content, {String type = 'text'}) {
         emit('chat_message', {
             'room_id': roomId,
@@ -259,7 +239,6 @@ class SocketService with ChangeNotifier {
         });
     }
 
-    // 发送上麦申请
     void requestSeat(String roomId, int seatIndex) {
         emit('seat_request', {
             'room_id': roomId,
@@ -267,7 +246,6 @@ class SocketService with ChangeNotifier {
         });
     }
 
-    // 批准上麦
     void approveSeat(String roomId, String requesterId, int seatIndex) {
         emit('approve_seat', {
             'room_id': roomId,
@@ -276,7 +254,6 @@ class SocketService with ChangeNotifier {
         });
     }
 
-    // 拒绝上麦
     void rejectSeat(String roomId, String requesterId) {
         emit('reject_seat', {
             'room_id': roomId,
