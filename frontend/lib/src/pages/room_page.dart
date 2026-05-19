@@ -149,14 +149,8 @@ class _RoomPageState extends State<RoomPage> {
 
     void _sendMessage() {
         if (_messageController.text.isEmpty) return;
-        if (!SocketService().isConnected) {
-            ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Not connected to chat'), backgroundColor: Colors.orange),
-            );
-            return;
-        }
         
-        // 通过 Socket 发送消息
+        // 通过 Socket 发送消息（未连接时会进入队列，连接后自动发送）
         socketService.sendChatMessage(widget.roomId, _messageController.text.trim());
         
         _messageController.clear();
@@ -168,7 +162,10 @@ class _RoomPageState extends State<RoomPage> {
         if (token != null) {
             SocketService().init(token);
             _setupSocketListeners();
-            SocketService().joinRoom(widget.roomId);
+            // 使用 onConnected 确保连接成功后再加入房间
+            SocketService().onConnected(() {
+                SocketService().joinRoom(widget.roomId);
+            });
         }
     }
 
