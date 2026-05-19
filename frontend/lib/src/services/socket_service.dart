@@ -6,6 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'api_service.dart';
 
+class _PendingEmit {
+    final String event;
+    final dynamic data;
+    _PendingEmit(this.event, this.data);
+}
+
 class SocketService with ChangeNotifier {
     static final SocketService _instance = SocketService._internal();
     factory SocketService() => _instance;
@@ -45,6 +51,8 @@ class SocketService with ChangeNotifier {
             debugPrint('[SocketService] Connected');
             _isConnected = true;
             notifyListeners();
+            // 发送所有待发事件
+            _flushPendingEmits();
         });
 
         _socket?.onDisconnect((_) {
@@ -152,13 +160,29 @@ class SocketService with ChangeNotifier {
         });
     }
 
+    // 待发送的事件队列（连接前缓存）
+    final List<_PendingEmit> _pendingEmits = [];
+
     // Emit 事件
     void emit(String event, dynamic data) {
         if (_socket != null && _isConnected) {
             _socket!.emit(event, data);
         } else {
-            debugPrint('[SocketService] Cannot emit $event: not connected');
+            // 缓存待发送的事件，连接后自动重发
+            debugPrint('[SocketService] Queuing $event (not connected)');
+            _pendingEmits.add(_PendingEmit(event, data));
         }
+    }
+
+    // 发送所有待发事件
+    void _flushPendingEmits() {
+        for (final pending in _pendingEmits) {
+            if (_socket != null) {
+                debugPrint('[SocketService] Flushing pending: ${pending.event}');
+                _socket!.emit(pending.event, pending.data);
+            }
+        }
+        _pendingEmits.clear();
     }
 
     // 加入房间

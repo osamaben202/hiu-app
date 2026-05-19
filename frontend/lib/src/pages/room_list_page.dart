@@ -55,13 +55,15 @@ class _RoomListPageState extends State<RoomListPage> {
         if (token != null) {
             SocketService().init(token);
             SocketService().on('room_update', _onRoomUpdate);
+            SocketService().on('room_closed', _onRoomUpdate);
+            SocketService().on('room_deleted', _onRoomUpdate);
         }
     }
 
     @override
     void dispose() {
         
-        if (mounted) { SocketService().off('room_update', _onRoomUpdate); }
+        if (mounted) { SocketService().off('room_update', _onRoomUpdate); SocketService().off('room_closed', _onRoomUpdate); SocketService().off('room_deleted', _onRoomUpdate); }
         _searchController.dispose();
         super.dispose();
     }
