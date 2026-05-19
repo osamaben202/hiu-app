@@ -261,7 +261,12 @@ class _RoomListPageState extends State<RoomListPage> {
                     MaterialPageRoute(
                         builder: (_) => RoomPage(roomId: room.id),
                     ),
-                );
+                ).then((_) {
+                    // 从房间返回后刷新列表
+                    if (mounted) {
+                        Provider.of<RoomProvider>(context, listen: false).fetchRooms();
+                    }
+                });
             }
         } else {
             final success = await provider.joinRoom(room.id);
@@ -270,7 +275,11 @@ class _RoomListPageState extends State<RoomListPage> {
                     MaterialPageRoute(
                         builder: (_) => RoomPage(roomId: room.id),
                     ),
-                );
+                ).then((_) {
+                    if (mounted) {
+                        Provider.of<RoomProvider>(context, listen: false).fetchRooms();
+                    }
+                });
             }
         }
         

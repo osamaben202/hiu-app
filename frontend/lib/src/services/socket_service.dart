@@ -28,8 +28,12 @@ class SocketService with ChangeNotifier {
     io.Socket? get socket => _socket;
 
     void init(String token) {
-        if (_token == token && _socket != null && _isConnected) return;
         _token = token;
+        if (_socket != null && _isConnected && _token == token) {
+            // 已经连接且 token 相同，不需要重新连接
+            debugPrint('[SocketService] Already connected with same token');
+            return;
+        }
         _connect();
     }
 
@@ -38,17 +42,19 @@ class SocketService with ChangeNotifier {
 
         _socket = io.io(
             ApiService.baseHost,
-            io.OptionBuilder()
-                .disableAutoConnect()
-                .setAuth({'token': _token})
-                .setTimeout(10000)
-                .setReconnectionAttempts(100)
-                .setReconnectionDelay(2000)
-                .build(),
+            {
+                'transports': ['polling', 'websocket'],
+                'autoConnect': false,
+                'auth': {'token': _token},
+                'timeout': 10000,
+                'reconnection': true,
+                'reconnectionAttempts': 100,
+                'reconnectionDelay': 2000,
+            },
         );
 
         _socket?.onConnect((_) {
-            debugPrint('[SocketService] Connected');
+            debugPrint('[SocketService] Connected successfully');
             _isConnected = true;
             notifyListeners();
             // 发送所有待发事件
