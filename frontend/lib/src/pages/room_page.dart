@@ -147,13 +147,27 @@ class _RoomPageState extends State<RoomPage> {
         }
     }
 
-    void _sendMessage() {
+    void _sendMessage() async {
         if (_messageController.text.isEmpty) return;
-        
-        // 通过 Socket 发送消息（未连接时会进入队列，连接后自动发送）
-        socketService.sendChatMessage(widget.roomId, _messageController.text.trim());
-        
+        final text = _messageController.text.trim();
         _messageController.clear();
+        
+        // 优先通过 Socket 发送消息
+        if (SocketService().isConnected) {
+            socketService.sendChatMessage(widget.roomId, text);
+        } else {
+            // Socket 未连接时使用 HTTP API 发送
+            try {
+                await ApiService().sendRoomMessage(widget.roomId, text);
+            } catch (e) {
+                debugPrint('HTTP message send failed: $e');
+                if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Failed to send message'), backgroundColor: Colors.red),
+                    );
+                }
+            }
+        }
     }
 
     void _initSocketAndJoinRoom() {
