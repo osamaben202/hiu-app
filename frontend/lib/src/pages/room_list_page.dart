@@ -2,6 +2,7 @@
  * 房间列表页面
  */
 import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:hiu_app/src/services/socket_service.dart';
 import '../providers/room_provider.dart';
@@ -37,6 +38,15 @@ class _RoomListPageState extends State<RoomListPage> {
     void initState() {
         super.initState();
         _initSocketListener();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+            Provider.of<RoomProvider>(context, listen: false).fetchRooms();
+        });
+    }
+    
+    @override
+    void didChangeDependencies() {
+        super.didChangeDependencies();
+        // 每次页面重新可见时刷新房间列表（解决关闭房间后仍在列表的问题）
         Provider.of<RoomProvider>(context, listen: false).fetchRooms();
     }
 
