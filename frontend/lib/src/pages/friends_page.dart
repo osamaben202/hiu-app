@@ -35,6 +35,7 @@ class _FriendsPageState extends State<FriendsPage> with SingleTickerProviderStat
     void dispose() {
         
         SocketService().off('friend_request', _onFriendRequest);
+        SocketService().off('friend_accepted', _onFriendAccepted);
         _tabController.dispose();
         _searchController.dispose();
         super.dispose();
@@ -52,6 +53,14 @@ class _FriendsPageState extends State<FriendsPage> with SingleTickerProviderStat
         if (token != null) {
             SocketService().init(token);
             SocketService().on('friend_request', _onFriendRequest);
+            SocketService().on('friend_accepted', _onFriendAccepted);
+        }
+    }
+    
+    void _onFriendAccepted(dynamic data) {
+        debugPrint('Friend accepted: $data');
+        if (mounted) {
+            Provider.of<FriendProvider>(context, listen: false).loadFriends();
         }
     }
 
