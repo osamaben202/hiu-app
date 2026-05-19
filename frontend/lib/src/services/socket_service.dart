@@ -20,9 +20,13 @@ class SocketService with ChangeNotifier {
     io.Socket? _socket;
     bool _isConnected = false;
     String? _token;
+    String? _currentRoomId;
 
     // 事件监听器
     final Map<String, List<Function>> _listeners = {};
+
+    // 连接成功回调
+    final List<VoidCallback> _onConnectCallbacks = [];
 
     bool get isConnected => _isConnected;
     io.Socket? get socket => _socket;
@@ -30,7 +34,6 @@ class SocketService with ChangeNotifier {
     void init(String token) {
         _token = token;
         if (_socket != null && _isConnected && _token == token) {
-            // 已经连接且 token 相同，不需要重新连接
             debugPrint('[SocketService] Already connected with same token');
             return;
         }
@@ -40,25 +43,39 @@ class SocketService with ChangeNotifier {
     void _connect() {
         _socket?.dispose();
 
+        debugPrint('[SocketService] Connecting to ${ApiService.baseHost}...');
+
         _socket = io.io(
             ApiService.baseHost,
-            {
-                'transports': ['polling', 'websocket'],
-                'autoConnect': false,
-                'auth': {'token': _token},
-                'timeout': 10000,
-                'reconnection': true,
-                'reconnectionAttempts': 100,
-                'reconnectionDelay': 2000,
-            },
+            io.OptionBuilder()
+                .setTransports(['websocket'])
+                .disableAutoConnect()
+                .setAuth({'token': _token})
+                .setTimeout(10000)
+                .enableReconnection()
+                .setReconnectionAttempts(100)
+                .setReconnectionDelay(2000)
+                .build(),
         );
 
         _socket?.onConnect((_) {
-            debugPrint('[SocketService] Connected successfully');
+            debugPrint('[SocketService] Connected successfully, socket.id: ${_socket?.id}');
             _isConnected = true;
             notifyListeners();
             // 发送所有待发事件
             _flushPendingEmits();
+            // 自动重新加入房间
+            if (_currentRoomId != null) {
+                debugPrint('[SocketService] Re-joining room: $_currentRoomId');
+                _socket!.emit('join_room', {'room_id': _currentRoomId});
+            }
+            // 执行连接成功回调
+            for (final cb in _onConnectCallbacks) {
+                try { cb(); } catch (e) {
+                    debugPrint('[SocketService] OnConnect callback error: $e');
+                }
+            }
+            _onConnectCallbacks.clear();
         });
 
         _socket?.onDisconnect((_) {
@@ -92,6 +109,12 @@ class SocketService with ChangeNotifier {
         _socket?.on('friend_request', (data) {
             debugPrint('[SocketService] Friend request: $data');
             _notifyListeners('friend_request', data);
+        });
+
+        // 好友接受通知
+        _socket?.on('friend_accepted', (data) {
+            debugPrint('[SocketService] Friend accepted: $data');
+            _notifyListeners('friend_accepted', data);
         });
 
         // 上麦申请
@@ -131,7 +154,14 @@ class SocketService with ChangeNotifier {
 
         // 房间关闭
         _socket?.on('room_closed', (data) {
+            debugPrint('[SocketService] Room closed: $data');
             _notifyListeners('room_closed', data);
+        });
+
+        // 房间删除
+        _socket?.on('room_deleted', (data) {
+            debugPrint('[SocketService] Room deleted: $data');
+            _notifyListeners('room_deleted', data);
         });
 
         // 房间更新
@@ -191,14 +221,33 @@ class SocketService with ChangeNotifier {
         _pendingEmits.clear();
     }
 
+    // 添加连接成功回调（一次性）
+    void onConnected(VoidCallback callback) {
+        if (_isConnected) {
+            callback();
+        } else {
+            _onConnectCallbacks.add(callback);
+        }
+    }
+
     // 加入房间
     void joinRoom(String roomId) {
-        emit('join_room', {'room_id': roomId});
+        _currentRoomId = roomId;
+        if (_isConnected) {
+            _socket!.emit('join_room', {'room_id': roomId});
+            debugPrint('[SocketService] Joined room: $roomId');
+        } else {
+            debugPrint('[SocketService] Queuing join_room for $roomId');
+            _pendingEmits.add(_PendingEmit('join_room', {'room_id': roomId}));
+        }
     }
 
     // 离开房间
     void leaveRoom(String roomId) {
-        emit('leave_room', {'room_id': roomId});
+        _currentRoomId = null;
+        if (_isConnected) {
+            _socket!.emit('leave_room', {'room_id': roomId});
+        }
     }
 
     // 发送聊天消息
