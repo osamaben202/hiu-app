@@ -38,15 +38,7 @@ class _RoomPageState extends State<RoomPage> {
     void initState() {
         super.initState();
         _loadRoom();
-        // Initialize global socket service
-        final token = await ApiService().getToken();
-        if (token != null) {
-            SocketService().init(token);
-            // Listen to socket events
-            _setupSocketListeners();
-            // Join the room
-            SocketService().joinRoom(widget.roomId);
-        }
+        _initSocketAndJoinRoom();
     }
 
     Future<void> _loadRoom() async {
@@ -170,9 +162,9 @@ class _RoomPageState extends State<RoomPage> {
         _messageController.clear();
     }
 
-    Future<void> _initSocketAndJoinRoom() async {
+    void _initSocketAndJoinRoom() {
         final api = ApiService();
-        final token = await api.getToken();
+        final token = api.token;
         if (token != null) {
             SocketService().init(token);
             _setupSocketListeners();

@@ -26,13 +26,7 @@ class _FriendsPageState extends State<FriendsPage> with SingleTickerProviderStat
         super.initState();
         _tabController = TabController(length: 3, vsync: this);
         _loadData();
-        // Initialize global socket service for friend notifications
-        final api = ApiService();
-        final token = await api.getToken();
-        if (token != null) {
-            SocketService().init(token);
-            SocketService().on('friend_request', _onFriendRequest);
-        }
+        _initSocketAndListen();
     }
 
 
@@ -52,9 +46,9 @@ class _FriendsPageState extends State<FriendsPage> with SingleTickerProviderStat
         await provider.loadPendingRequests();
     }
 
-    Future<void> _initSocketAndListen() async {
+    void _initSocketAndListen() {
         final api = ApiService();
-        final token = await api.getToken();
+        final token = api.token;
         if (token != null) {
             SocketService().init(token);
             SocketService().on('friend_request', _onFriendRequest);

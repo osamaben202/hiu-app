@@ -93,7 +93,7 @@ class UserProvider extends ChangeNotifier {
             
             // 确保token被加载到ApiService中
             await _api.loadToken();
-            final token = await _api.getToken();
+            final token = _api.token;
             if (token != null) SocketService().init(token);
             
             // 尝试用 token 获取用户信息

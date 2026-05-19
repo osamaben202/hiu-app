@@ -49,18 +49,12 @@ class _RoomListPageState extends State<RoomListPage> {
         }
     }
 
-    Future<void> _initSocketListener() async {
+    void _initSocketListener() {
         final api = ApiService();
-        final token = await api.getToken();
+        final token = api.token;
         if (token != null) {
             SocketService().init(token);
             SocketService().on('room_update', _onRoomUpdate);
-        }
-    }
-
-    void _onRoomUpdate(dynamic data) {
-        if (mounted) {
-            Provider.of<RoomProvider>(context, listen: false).fetchRooms();
         }
     }
 
@@ -510,28 +504,6 @@ class _PasswordDialog extends StatefulWidget {
 
 class _PasswordDialogState extends State<_PasswordDialog> {
     final _passwordController = TextEditingController();
-
-    void _onRoomUpdate(dynamic data) {
-        debugPrint('Room update: $data');
-        if (mounted) {
-            Provider.of<RoomProvider>(context, listen: false).fetchRooms();
-        }
-    }
-
-    Future<void> _initSocketListener() async {
-        final api = ApiService();
-        final token = await api.getToken();
-        if (token != null) {
-            SocketService().init(token);
-            SocketService().on('room_update', _onRoomUpdate);
-        }
-    }
-
-    void _onRoomUpdate(dynamic data) {
-        if (mounted) {
-            Provider.of<RoomProvider>(context, listen: false).fetchRooms();
-        }
-    }
 
     @override
     void dispose() {
