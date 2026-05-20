@@ -253,7 +253,13 @@ class _RoomPageState extends State<RoomPage> {
             ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Your seat request was approved!'), backgroundColor: Colors.green),
             );
-            _roomProvider?.fetchRoomDetail(widget.roomId);
+            _roomProvider?.fetchRoomDetail(widget.roomId).then((_) {
+                if (mounted) {
+                    setState(() {
+                        _room = _roomProvider?.currentRoom;
+                    });
+                }
+            });
         }
     }
 
@@ -269,7 +275,13 @@ class _RoomPageState extends State<RoomPage> {
     void _onSeatUpdate(dynamic data) {
         debugPrint('Seat update: $data');
         if (mounted) {
-            _roomProvider?.fetchRoomDetail(widget.roomId);
+            _roomProvider?.fetchRoomDetail(widget.roomId).then((_) {
+                if (mounted) {
+                    setState(() {
+                        _room = _roomProvider?.currentRoom;
+                    });
+                }
+            });
         }
     }
 
@@ -286,6 +298,10 @@ class _RoomPageState extends State<RoomPage> {
                 createdAt: DateTime.now(),
             );
             setState(() => _messages.add(msg));
+            // Refresh room data to update online count
+            _roomProvider?.fetchRoomDetail(widget.roomId).then((_) {
+                if (mounted) setState(() { _room = _roomProvider?.currentRoom; });
+            });
         }
     }
 
@@ -302,6 +318,10 @@ class _RoomPageState extends State<RoomPage> {
                 createdAt: DateTime.now(),
             );
             setState(() => _messages.add(msg));
+            // Refresh room data to update online count
+            _roomProvider?.fetchRoomDetail(widget.roomId).then((_) {
+                if (mounted) setState(() { _room = _roomProvider?.currentRoom; });
+            });
         }
     }
 
