@@ -33,6 +33,15 @@ jobs:
           cd frontend
           flutter build apk --release
           
+      - name: Upload APK to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: latest-build
+          name: Latest Build
+          files: frontend/build/app/outputs/flutter-apk/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
