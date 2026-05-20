@@ -105,16 +105,16 @@ class ApiService {
         try {
             switch (method.toUpperCase()) {
                 case 'GET':
-                    response = await http.get(uri, headers: options);
+                    response = await http.get(uri, headers: options).timeout(const Duration(seconds: 15));
                     break;
                 case 'POST':
-                    response = await http.post(uri, headers: options, body: body != null ? jsonEncode(body) : null);
+                    response = await http.post(uri, headers: options, body: body != null ? jsonEncode(body) : null).timeout(const Duration(seconds: 15));
                     break;
                 case 'PUT':
-                    response = await http.put(uri, headers: options, body: body != null ? jsonEncode(body) : null);
+                    response = await http.put(uri, headers: options, body: body != null ? jsonEncode(body) : null).timeout(const Duration(seconds: 15));
                     break;
                 case 'DELETE':
-                    response = await http.delete(uri, headers: options);
+                    response = await http.delete(uri, headers: options).timeout(const Duration(seconds: 15));
                     break;
                 default:
                     throw Exception('Unsupported HTTP method');
