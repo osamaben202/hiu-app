@@ -8,6 +8,7 @@ import '../providers/user_provider.dart';
 import '../providers/friend_provider.dart';
 import '../services/api_service.dart';
 import '../models/user.dart';
+import 'chat_page.dart';
 
 class FriendsPage extends StatefulWidget {
     const FriendsPage({super.key});
@@ -245,7 +246,14 @@ class _FriendCard extends StatelessWidget {
                             title: const Text('Send Message'),
                             onTap: () {
                                 Navigator.pop(context);
-                                // TODO: Navigate to chat
+                                Navigator.push(context, MaterialPageRoute(
+                                    builder: (_) => ChatPage(
+                                        oderId: friend.id,
+                                        nickname: friend.nickname ?? friend.account ?? '',
+                                        avatar: friend.avatar ?? '',
+                                        gender: friend.gender ?? '',
+                                    ),
+                                ));
                             },
                         ),
                         ListTile(
@@ -629,8 +637,11 @@ class _UserProfileCard extends StatelessWidget {
     @override
     Widget build(BuildContext context) {
         final currentUser = Provider.of<UserProvider>(context, listen: false).currentUser;
+        final friendProvider = Provider.of<FriendProvider>(context, listen: true);
         final odId = user.id;
         final isSelf = odId == currentUser?.id;
+        // Check if already friends
+        final isAlreadyFriend = friendProvider.friends.any((f) => f.id == odId);
 
         return Container(
             decoration: const BoxDecoration(
@@ -699,26 +710,52 @@ class _UserProfileCard extends StatelessWidget {
                                 child: Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                                     children: [
-                                        _ActionButton(
-                                            icon: Icons.person_add,
-                                            label: 'Add Friend',
-                                            onTap: () async {
-                                                final provider = Provider.of<FriendProvider>(context, listen: false);
-                                                await provider.sendFriendRequest(user.id);
-                                                if (context.mounted) {
-                                                    Navigator.pop(context);
+                                        if (isAlreadyFriend)
+                                            _ActionButton(
+                                                icon: Icons.check_circle,
+                                                label: 'Friends',
+                                                color: Colors.green,
+                                                onTap: () {
                                                     ScaffoldMessenger.of(context).showSnackBar(
-                                                        const SnackBar(content: Text('Friend request sent')),
+                                                        const SnackBar(content: Text('Already friends')),
                                                     );
-                                                }
-                                            },
-                                        ),
+                                                },
+                                            )
+                                        else
+                                            _ActionButton(
+                                                icon: Icons.person_add,
+                                                label: 'Add Friend',
+                                                onTap: () async {
+                                                    final provider = Provider.of<FriendProvider>(context, listen: false);
+                                                    try {
+                                                        await provider.sendFriendRequest(user.id);
+                                                        if (context.mounted) {
+                                                            ScaffoldMessenger.of(context).showSnackBar(
+                                                                const SnackBar(content: Text('Friend request sent')),
+                                                            );
+                                                        }
+                                                    } catch (e) {
+                                                        if (context.mounted) {
+                                                            ScaffoldMessenger.of(context).showSnackBar(
+                                                                SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+                                                            );
+                                                        }
+                                                    }
+                                                },
+                                            ),
                                         _ActionButton(
                                             icon: Icons.chat,
                                             label: 'Message',
                                             onTap: () {
                                                 Navigator.pop(context);
-                                                // TODO: Navigate to chat
+                                                Navigator.push(context, MaterialPageRoute(
+                                                    builder: (_) => ChatPage(
+                                                        oderId: user.id,
+                                                        nickname: user.nickname ?? user.account ?? '',
+                                                        avatar: user.avatar ?? '',
+                                                        gender: user.gender ?? '',
+                                                    ),
+                                                ));
                                             },
                                         ),
                                         _ActionButton(
