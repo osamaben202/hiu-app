@@ -283,6 +283,15 @@ class ApiService {
 
     Future<void> closeRoom(String roomId) async => await _request('DELETE', '/rooms/$roomId');
 
+    /// 通过 HTTP API 发送房间消息（Socket 断开时的 fallback）
+    Future<void> sendRoomMessage(String roomId, String content, {String type = 'text'}) async {
+        await _request('POST', '/rooms/$roomId/messages', body: {
+            'content': content,
+            'type': type,
+        });
+    }
+
+
     /// 转移房主
     Future<void> transferRoomOwner(String roomId, String newOwnerId) async =>
         await _request('POST', '/rooms/$roomId/transfer-owner', body: {'new_owner_id': newOwnerId});
