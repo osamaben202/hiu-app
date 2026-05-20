@@ -2,6 +2,7 @@
  * 房间列表页面
  */
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:provider/provider.dart';
 import 'package:hiu_app/src/services/socket_service.dart';
 import '../providers/room_provider.dart';
@@ -20,6 +21,7 @@ class _RoomListPageState extends State<RoomListPage> {
     final _searchController = TextEditingController();
     String _sortBy = 'created';
     String? _selectedTag;
+    Timer? _debounce;
     // Using global SocketService
 
     // 标签列表
@@ -62,17 +64,29 @@ class _RoomListPageState extends State<RoomListPage> {
 
     @override
     void dispose() {
-        
+        _debounce?.cancel();
         if (mounted) { SocketService().off('room_update', _onRoomUpdate); SocketService().off('room_closed', _onRoomUpdate); SocketService().off('room_deleted', _onRoomUpdate); }
         _searchController.dispose();
         super.dispose();
     }
 
     Future<void> _refresh() async {
-        await Provider.of<RoomProvider>(context, listen: false).fetchRooms(
-            keyword: _searchController.text.isEmpty ? null : _searchController.text,
-            sort: _sortBy,
-        );
+        try {
+            await Provider.of<RoomProvider>(context, listen: false).fetchRooms(
+                keyword: _searchController.text.isEmpty ? null : _searchController.text,
+                sort: _sortBy,
+            );
+        } catch (e) {
+            debugPrint('Refresh rooms failed: \$e');
+            // Retry once after a short delay
+            await Future.delayed(const Duration(seconds: 2));
+            try {
+                await Provider.of<RoomProvider>(context, listen: false).fetchRooms(
+                    keyword: _searchController.text.isEmpty ? null : _searchController.text,
+                    sort: _sortBy,
+                );
+            } catch (_) {}
+        }
     }
 
     void _search() {
@@ -137,12 +151,23 @@ class _RoomListPageState extends State<RoomListPage> {
                             decoration: InputDecoration(
                                 hintText: 'Search rooms...',
                                 prefixIcon: const Icon(Icons.search),
-                                suffixIcon: IconButton(
-                                    icon: const Icon(Icons.clear),
-                                    onPressed: () {
-                                        _searchController.clear();
-                                        _search();
-                                    },
+                                suffixIcon: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                        if (_searchController.text.isNotEmpty)
+                                            IconButton(
+                                                icon: const Icon(Icons.send, size: 20),
+                                                onPressed: _search,
+                                                tooltip: 'Search',
+                                            ),
+                                        IconButton(
+                                            icon: const Icon(Icons.clear),
+                                            onPressed: () {
+                                                _searchController.clear();
+                                                _search();
+                                            },
+                                        ),
+                                    ],
                                 ),
                                 border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(25),
@@ -151,6 +176,12 @@ class _RoomListPageState extends State<RoomListPage> {
                                 fillColor: Colors.white,
                             ),
                             onSubmitted: (_) => _search(),
+                            onChanged: (value) {
+                                _debounce?.cancel();
+                                _debounce = Timer(const Duration(milliseconds: 500), () {
+                                    _search();
+                                });
+                            },
                         ),
                     ),
                     
