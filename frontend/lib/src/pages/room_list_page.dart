@@ -59,13 +59,14 @@ class _RoomListPageState extends State<RoomListPage> {
             SocketService().on('room_update', _onRoomUpdate);
             SocketService().on('room_closed', _onRoomUpdate);
             SocketService().on('room_deleted', _onRoomUpdate);
+            SocketService().on('new_room', _onRoomUpdate);
         }
     }
 
     @override
     void dispose() {
         _debounce?.cancel();
-        if (mounted) { SocketService().off('room_update', _onRoomUpdate); SocketService().off('room_closed', _onRoomUpdate); SocketService().off('room_deleted', _onRoomUpdate); }
+        if (mounted) { SocketService().off('room_update', _onRoomUpdate); SocketService().off('room_closed', _onRoomUpdate); SocketService().off('room_deleted', _onRoomUpdate); SocketService().off('new_room', _onRoomUpdate); }
         _searchController.dispose();
         super.dispose();
     }
